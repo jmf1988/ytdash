@@ -3,9 +3,9 @@ Python script to play You Tube Live DASH streams using custom local player in Li
 
 Dependencies: mpv/mplayer/vlc, ffmpeg
 
-Python dependencies: BeatifulSoup4, requests, futures-requests, lxml 
+Python dependencies: BeatifulSoup4, requests, futures-requests, lxml, pyopenssl 
 
-Dependencies instalation: pip install bs4 requests futures-requests lxml
+Dependencies instalation: pip install bs4 requests futures-requests lxml  pyopenssl
 
 Usage:
 
