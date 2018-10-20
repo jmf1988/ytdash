@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# YouTube Live Dash Script
 from bs4 import BeautifulSoup
 from requests_futures.sessions import FuturesSession
 # from concurrent.futures import ProcessPoolExecutor
