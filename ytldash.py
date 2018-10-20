@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# pip[2|3] install bs4 lxml pyopenssl requests-futures requests
 from bs4 import BeautifulSoup
 from requests_futures.sessions import FuturesSession
 # from concurrent.futures import ProcessPoolExecutor
@@ -13,18 +12,6 @@ import time
 import subprocess
 import re
 import shlex
-# import socket
-# problematic server https://r3---sn-j5c5nx-5x2e.googlevideo.com
-# REdirector: https://redirector.googlevideo.com/videoplayback?live=1&aitags=133%2C134%2C135%2C136%2C160%2C298&ipbits=0&cmbypass=yes&compress=yes&noclen=1&mime=video%2Fmp4&itag=160&id=IdpLV9vsWho.0&signature=C7BC51C59DD7BB41721053DBCCE64F8B4C71F7B6.0468CF83C66F16A525E6A01968383799C4C5A19F&key=yt6&ip=190.114.233.229&expire=1532343596&mv=m&cmpl=1&mt=1532321955&ms=lv&ei=zGBVW46pFMOtwwTkn4n4CQ&mn=sn-j5c5nx-5x2e&mm=32&keepalive=yes&requiressl=yes&c=WEB&gcr=ar&sparams=aitags%2Ccmbypass%2Ccompress%2Cei%2Cgcr%2Cgir%2Chang%2Cid%2Cinitcwndbps%2Cip%2Cipbits%2Citag%2Ckeepalive%2Clive%2Cmime%2Cmm%2Cmn%2Cms%2Cmv%2Cnoclen%2Cpl%2Crequiressl%2Csource%2Cexpire&hang=1&pl=24&source=yt_live_broadcast&initcwndbps=232500&gir=yes&alr=yes&cpn=iL53FIKa687Ci00q&cver=2.20180719&cmo=pf=1&range=0-4095&rn=2&rbuf=0 # noqa
-# redirector2: https://redirector.googlevideo.com/videoplayback?source=yt_live_broadcast&live=1&mm=32&expire=1532391235&ei=4xpWW5eLC8SGxwTpt6zYDQ&gcr=ar&keepalive=yes&noclen=1&signature=66CAC6A1B0C2AFB907E096154DD5CA056BE48185.2348B91500684A5F925A5923114AC7ADA92F1E76&requiressl=yes&ms=lv&sparams=aitags%2Ccmbypass%2Cei%2Cgcr%2Cgir%2Chang%2Cid%2Cip%2Cipbits%2Citag%2Ckeepalive%2Clive%2Cmime%2Cmm%2Cmn%2Cms%2Cmv%2Cnoclen%2Cpl%2Crequiressl%2Csource%2Cexpire&mt=1532368960&mv=u&mime=video%2Fmp4&id=Cp4L7wRT3Sw.0&pl=24&aitags=133%2C134%2C135%2C136%2C137%2C160%2C298%2C299&gir=yes&cmbypass=yes&ip=190.114.233.229&mn=sn-uxax4vopj55gb-x1xs&ipbits=0&itag=133&c=WEB&key=yt6&hang=1&alr=yes&cpn=Tp-3t-AhPOj5c0Gd&cver=2.20180719&cmo=pf=1&sq=7215&rn=378&rbuf=2087 # noqa
-"""
-A24:
-https://www.youtube.com/watch?v=LrHM-kZ39Cc
-tren:
-https://www.youtube.com/channel/UCUPn5IEQugMf_JeNJOV9p2A
-tn:
-https://www.youtube.com/channel/UCj6PcyLvpnIRT_2W_mwa9Aw
-            """
 try:
     import gtk
     swidth = gtk.gdk.screen_width()
@@ -54,11 +41,11 @@ try:
 except ImportError:
     from bs4 import BeautifulSoup
 '''
-
-ffmpegbin = "ffmpeg-nohttp"
-playercmd = """mpv7 -"""
+ffmpegbin = "ffmpeg"
+playercmd = """mpv -"""
 # --demuxer-max-back-bytes=10485760 --really-quiet=yes --demuxer-max-bytes=10485760
-# playercmd = 'mpv -'
+# playercmd = 'vlc -'
+# playercmd = 'mplayer -cache=8000 -cache-min=5 -'
 maxfps = 30
 segmentsoffset = 3
 twosegmentsdownload = 0
@@ -81,20 +68,7 @@ rheaders = {
     'Referer': 'https://www.youtube.com/',
     # 'Keep-Alive': 'timeout=5'
     }
-# host = "localhost"
-# aport = 5560
-# vport = 5561
-# udpa = "udp://" + host + ":" + str(aport)
-# udpv = "udp://" + host + ":" + str(vport)
-# tcpa = "tcp://" + host + ":" + str(aport)
-# tcpv = "tcp://" + host + ":" + str(vport)
-# s = socket.socket(
-#    socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-# s.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_LOOP, 1)
-# s = socket.socket(
-#    socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-def ReleaseConn(rm):
-    for segment in rm:
+for segment in rm:
         for mediatype in segment:
             mediatype.close()
 
@@ -114,13 +88,6 @@ def SetVideoQuality():
         else:
             idx = i
     return int(idx)
-
-
-"""
-def bg_cb(sess, resp):
-    # parse the json storing the result on the response object
-    resp.data = resp.content
-"""
 
 
 def get_metadata(manifestsearch, aid, vid):
@@ -373,42 +340,6 @@ def main():
         else:
             print('Couldn\'t get Manifest or Video isn\'t Live, skipping...')
             continue
-
-        '''
-        videourls = soup3.MPD.find("AdaptationSet", mimeType="video/mp4").findAll('BaseURL')
-        # Sort bandwidths:
-        vurls[0], vurls[1], vurls[2], vurls[3] = vurls[3], vurls[0], vurls[1], vurls[2]
-        urls = soup3.MPD.findAll('BaseURL')
-        audiomainurl = str(urls[0]).replace('<BaseURL>', "").replace('</BaseURL>', "")
-        videomainurl = str(urls[2]).replace('<BaseURL>', "").replace('</BaseURL>', "")
-        while soup.findAll('a')[i]['href']:
-        for i in range(50):
-            if str(soup.findAll('a')[i]['href'])[:6] == "/watch":soup.findAll('a')[i]['href']  # noqa
-        rawmanifest = requests.get(manifest)
-        rawxml=BeautifulSoup(rawmanifest.text, 'xml')
-        rawxml.MPD.Representation
-        pipenin, pipeout = os.pipe()
-        pipenin2, pipeout2 = os.pipe()
-        os.spawnl(os.P_NOWAIT, '/home/jmf/ffmpeg13 -v 0 -follow 1 -i /home/jmf/fifo -c copy -f nut -|/home/jmf/mpv4 - >&/dev/null')  # noqa
-        ffm = os.system(
-            '( %s -v 0 -follow 1 -i %s -c copy -f nut -|%s 1>/dev/null ) &'
-            % (ffmpegbin, fifofile, playercmd))
-        if ffm > 0:
-            print("Error openning player, Error: " + ffm + " ,quitting...")
-            quit()
-        '''
-
-        """
-        udpa = "udp://" + host + ":" + str(aport)
-        udpv = "udp://" + host + ":" + str(vport)
-        ffmpegbaseargs = shlex.split(
-             '''%s -y -v 255 -thread_queue_size 1024 -flags +low_delay
-             -overrun_nonfatal 1 -i %s
-             -thread_queue_size 1024 -flags +low_delay -overrun_nonfatal 1
-             -i %s -c copy -f mpegts ->>out.ts''' %
-             (ffmpegbin, udpa, udpv)
-             )
-        """
         # Opening main FFmpeg and player:
         ffmpegbaseargs = shlex.split(
             '''%s -v 0 -analyzeduration %s -thread_queue_size 1024
@@ -649,95 +580,6 @@ def main():
                 if cont:
                     cont = False
                     continue
-                """
-                #socka.connect('/dev/shm/audio')
-                for chunk in rm[0].iter_content(chunk_size=128):
-                    socka.sendall(chunk)
-                #sockv.connect('/dev/shm/video')
-                for chunk in rm[1].iter_content(chunk_size=128):
-                    sockv.sendall(chunk)
-                for chunk in rm[2].iter_content(chunk_size=128):
-                    socka.sendall(chunk)
-                for chunk in rm[3].iter_content(chunk_size=128):
-                    sockv.sendall(chunk)
-                #socka.close()
-                #sockv.close()
-                """
-                """
-                for line in rm[0].iter_lines():
-                    s.sendto(line, (host, aport))
-                for line in rm[1].iter_lines():
-                    s.sendto(line, (host, vport))
-                for line in rm[2].iter_lines():
-                    s.sendto(line, (host, vport))
-                for line in rm[3].iter_lines():
-                    s.sendto(line, (host, aport))
-                """
-                """
-                for chunk in rm[0].iter_content(chunk_size=128):
-                    s.sendto(chunk, (host, aport))
-                for chunk in rm[1].iter_content(chunk_size=128):
-                    s.sendto(chunk, (host, vport))
-                for chunk in rm[2].iter_content(chunk_size=128):
-                    s.sendto(chunk, (host, aport))
-                for chunk in rm[3].iter_content(chunk_size=128):
-                    s.sendto(chunk, (host, vport))
-                """
-                '''
-                # for filename in audiofilename, videofilename:
-                # for i in range(2*2):
-                with open(audiofilename, 'wb') as fd:
-                        # for chunk in rm[0].iter_content(chunk_size=None):
-                        #    fd.write(chunk)
-                        fd.write(rm[0].content)
-                with open(videofilename, 'wb') as fd:
-                        # for chunk in rm[1].iter_content(chunk_size=None):
-                        #   fd.write(chunk)
-                        fd.write(rm[1].content)
-                ffmpegargs = shlex.split(
-                    '%s -v 0 -nostdin -y -flags +low_delay
-                    -thread_queue_size 1024 -i %s
-                    -flags +low_delay -thread_queue_size 1024 -i %s
-                    -c copy -f mpegts %s'
-                    % (ffmpegbin, audiofilename, videofilename, fifofile)
-                     )
-                if player.poll() is not None:
-                    print("Player Closed, quitting...")
-                    break
-                ffmpegreturncode = subprocess.call(ffmpegargs)
-                with open(audiofilename2, 'wb') as fd:
-                        # for chunk in rm[2].iter_content(chunk_size=None):
-                        #   fd.write(chunk)
-                        fd.write(rm[2].content)
-                with open(videofilename2, 'wb') as fd:
-                        # for chunk in rm[3].iter_content(chunk_size=None):
-                        #   fd.write(chunk)
-                        fd.write(rm[3].content)
-                # FFMpeg Muxing:
-                ffmpegargs = shlex.split(
-                     '%s -v 0 -nostdin -y -flags +low_delay
-                     -thread_queue_size 1024 -i %s
-                     -flags +low_delay -thread_queue_size 1024 -i %s
-                     -c copy -f mpegts %s'
-                     % (ffmpegbin, audiofilename2, videofilename2, fifofile)
-                     )
-                if player.poll() is not None:
-                    print("Player Closed, quitting...")
-                    break
-                ffmpegreturncode = subprocess.call(ffmpegargs)
-                '''
-
-                """
-                if ffmpegreturncode > 0:
-                    print("Ffmpeg error, reintentando...")
-                    time.sleep(1)
-                    continue
-                """
-                # Next segment:
-                # seqnumber += 2
-            # print("STATUS CODE: " + str(rm[0].status_code))
-            #    print("Retrying in %s secs..." % segmentsecs)
-            #   time.sleep(segmentsecs)
             except requests.exceptions.ConnectionError:
                 print("Connection Error Exception")
                 logging.info("Connection Error Exception")
