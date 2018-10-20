@@ -1,5 +1,5 @@
 # ytlivedash
-Python script to play You Tube Live DASH streams using custom local player in Linux
+Python script to play You Tube Live DASH H264 streams using custom local player in Linux
 
 Dependencies: mpv/mplayer/vlc, ffmpeg
 
@@ -17,6 +17,10 @@ ytldash.py sky 1 (Will play only the first live result of all results found for 
 
 ytldash.py "https://www.youtube.com/user/fozzium" (Will play all live streams found in this channel url, closing the player is needed to play next URL )
 
-Recommended and default player is mpv >=0.28 and ffmpeg >= 4.0
+Recommended and default player is mpv >=0.28
 
 Mpv player tips: Shift + I to see video and audio live details.
+
+Recommended ffmpeg >=4.0 ( or better the tiny specific ffmpeg x86_64 build from this repo.)
+
+
