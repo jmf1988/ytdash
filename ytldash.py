@@ -68,7 +68,9 @@ rheaders = {
     'Referer': 'https://www.youtube.com/',
     # 'Keep-Alive': 'timeout=5'
     }
-for segment in rm:
+
+def ReleaseConn(rm):
+    for segment in rm:
         for mediatype in segment:
             mediatype.close()
 
