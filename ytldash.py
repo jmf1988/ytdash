@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# YouTube Live Dash Script
+# pip[2|3] install bs4 lxml pyopenssl requests-futures requests
 from bs4 import BeautifulSoup
 from requests_futures.sessions import FuturesSession
 # from concurrent.futures import ProcessPoolExecutor
@@ -13,6 +13,7 @@ import time
 import subprocess
 import re
 import shlex
+
 try:
     import gtk
     swidth = gtk.gdk.screen_width()
@@ -32,48 +33,38 @@ except Exception:
 os.setpgrp()
 with open('/tmp/dash2.0.pid', 'w') as fd:
     fd.write(str(os.getpgrp()))
-'''
-import tkinter
-root = tkinter.Tk()
-swidth = root.winfo_screenwidth()
-sheight = root.winfo_screenheight()
-try:
-    from BeautifulSoup import BeautifulSoup
-except ImportError:
-    from bs4 import BeautifulSoup
-'''
-ffmpegbin = "ffmpeg"
-playercmd = """mpv -"""
-# --demuxer-max-back-bytes=10485760 --really-quiet=yes --demuxer-max-bytes=10485760
-# playercmd = 'vlc -'
-# playercmd = 'mplayer -cache=8000 -cache-min=5 -'
-maxfps = 30
+
+ffmpegbin = "/home/jmf/bin/ffmpeg"
+audiofilename = "/dev/shm/audio"
+ffmpegargs = shlex.split('''%s -v 1 -thread_queue_size 1024 -i %s
+    -thread_queue_size 1024 -i pipe:0 -map 0:0 -map 1:0
+    -c copy -f mpegts pipe:1''' % (ffmpegbin, audiofilename))
+
+playercmd = """mpv --demuxer-max-back-bytes=10485760 --really-quiet=yes
+    --demuxer-max-bytes=10485760 - """
+# playercmd = 'mpv -'
+maxfps = 60
 segmentsoffset = 3
 twosegmentsdownload = 0
-audiofilename = "/dev/shm/audio"
+autoresync = 1  # Drop segments on high delays to keep live
 
 logging.basicConfig(
     level=logging.INFO, filename="logfile", filemode="w+",
     format="%(asctime)-15s %(levelname)-8s %(message)s")
-rheaders = None
-"""
-rheaders = {
-    'Connection': 'close',
-    'User-Agent': '''Mozilla/5.0 (X11; Linux i686 (x86_64)) AppleWebKit/537.36
-    (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36'''
-        }
-"""
+
 rheaders = {
     # 'Connection': 'close',
-    'Origin': 'https://www.youtube.com',
-    'Referer': 'https://www.youtube.com/',
+    # 'User-Agent': '''Mozilla/5.0 (X11; Linux i686 (x86_64)) AppleWebKit/537.36
+    # (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36''',
     # 'Keep-Alive': 'timeout=5'
     }
+
 
 def ReleaseConn(rm):
     for segment in rm:
         for mediatype in segment:
             mediatype.close()
+
 
 def Bandwidth(elem):
     return int(elem['bandwidth'])
@@ -93,6 +84,23 @@ def SetVideoQuality():
     return int(idx)
 
 
+
+def check_url(url):
+    status = 0
+    while True:
+        global head
+        head = session.head(url, allow_redirects=False)
+        status = head.result().status_code
+        print("STATUS %s" % status)
+        if status == 302:
+            url = head.result().headers.get('Location') + "/"
+        elif status == 200:
+            return (url, status)
+        else:
+            logging.info("Error checking URL, STATUS: %s" % str(status))
+            return (url, status)
+
+
 def get_metadata(manifestsearch, aid, vid):
     manifesturl = manifestsearch.group(1)
     offline = re.search('force_finished|playback_host', str(manifesturl))
@@ -100,33 +108,32 @@ def get_metadata(manifestsearch, aid, vid):
     refreshman = True
     while tries > 0:
         if not offline and refreshman:
-            # rheaders['Referer'] = videourl
             rawmanifest = session.get(manifesturl.replace('\\', "").replace(
                     'ip/', 'keepalive/yes/ip/'), headers=rheaders)
             if not rawmanifest.result().ok:
                 print("Error getting manifest, skipping...")
                 return 1
-            # rheaders['Referer'] = "https://www.youtube.com/"
-            '''
-            rawmanifest = session.get(
-            manifesturl.replace('\\', ""), headers=rheaders)
-            '''
         else:
             print("Live recently ended, skipping..." + manifesturl)
             return 1
         soup3 = BeautifulSoup(rawmanifest.result().content, 'xml')
         segmentsecs = float(soup3.MPD['minimumUpdatePeriod'][2:7])
         print("Segmento segundos: " + str(segmentsecs))
+        global sens
         if segmentsecs == 1.000:
+            sens = 1
             print('Live mode: ULTRA LOW LATENCY')
             logging.info('Live mode: ULTRA LOW LATENCY')
-            twosegmentsdownload = 0
+            twosegmentsdownload = 1
         elif segmentsecs == 2.000:
+            sens = 1
             print('Live mode: LOW LATENCY')
             logging.info('Live mode: LOW LATENCY')
         elif segmentsecs == 5.000:
+            sens = 0.8
             print('Live mode: NORMAL LATENCY')
             logging.info('Live mode: NORMAL LATENCY')
+
         audiourls = soup3.MPD.find(
             "AdaptationSet", mimeType="audio/mp4").findAll('BaseURL')
         videodata = soup3.MPD.find(
@@ -135,6 +142,7 @@ def get_metadata(manifestsearch, aid, vid):
             frameRate=re.compile("^[0-" + str(maxfps)[:1] + "][0-9]$"),
             bandwidth=True
             )
+        # print("VIDEODATA: %s" % videodata)
         videodata.sort(key=Bandwidth)
         idx = 0
         while idx < len(videodata):
@@ -145,82 +153,44 @@ def get_metadata(manifestsearch, aid, vid):
             idx += 1
         aid = aid
         vid = vid
-        audiomainurl = audiourls[aid].text
-        videomainurl = videodata[vid].text
-        ha = session.get(audiomainurl, allow_redirects=True)
-        status = ha.result().status_code
-        if status == 503 or status == 403:
-            tries -= 1
-            print(
-                "Error Status: %s, trying redirection..."
-                % status)
-            currenthost = re.search(
-                'https://(.*?)\.', videomainurl).group(1)
-            redirvideourl = videomainurl.replace(currenthost, "redirector")
-            rediraudiourl = audiomainurl.replace(currenthost, "redirector")
-            videomainurl = session.head(
-                redirvideourl, allow_redirects=True).result().url + "/"
-            audiomainurl = session.head(
-                rediraudiourl, allow_redirects=True).result().url + "/"
-            break
-            '''
-            tries -= 1
-            # Get new host with redirector
-            currenthost = re.search(
-                'https://(.*?)\.', videomainurl).group(1)
-            while not requests.head(videomainurl, allow_redirects=True).ok:
-                if re.search(currenthost, videomainurl):
-                    vredirurl = videomainurl.replace(currenthost, "redirector")
-                    aredirurl = audiomainurl.replace(currenthost, "redirector")
-                    getnewaurl = requests.get(
-                        aredirurl, allow_redirects=False,
-                        headers={'Host': 'redirector.googlevideo.com'})
-                    getnewvurl = requests.get(
-                        vredirurl, allow_redirects=False,
-                        headers={'Host': 'redirector.googlevideo.com'})
-                    videomainurl = getnewvurl.headers.get('Location')
-                    audiomainurl = getnewaurl.headers.get('Location')
-                    print("NEW Video URL: %s" % videomainurl)
-                else:
-                    break
-                print('Sleeping 5 seconds...')
-                time.sleep(5)
-            hv = requests.head(videomainurl, allow_redirects=False)
-            ha = requests.head(audiomainurl, allow_redirects=False)
-            status = hv.status_code
-            if status == 302:
-                videomainurl = hv.headers['Location']
-                audiomainurl = ha.headers['Location']
+        audiomainurl, astatus = check_url(audiourls[aid].text)
+        videomainurl, vstatus = check_url(videodata[vid].text)
+        logging.info("AUDIOMAINURL %s" % audiomainurl)
+        logging.info("VIDEOMAINURL %s" % videomainurl)
+        if (vstatus == 503 or vstatus == 403 or
+           astatus == 503 or astatus == 403):
+                tries -= 1
+                print(
+                    "Error Status: %s, trying redirection..."
+                    % str(astatus))
+                currenthost = re.search(
+                    r'https://(.*?)\.', videomainurl).group(1)
+                redirvideourl = videomainurl.replace(currenthost, "redirector")
+                rediraudiourl = audiomainurl.replace(currenthost, "redirector")
+                videomainurl = session.head(
+                    redirvideourl, allow_redirects=True).result().url + "/"
+                audiomainurl = session.head(
+                    rediraudiourl, allow_redirects=True).result().url + "/"
+                audiomainurl, astatus = check_url(audiomainurl)
+                videomainurl, vstatus = check_url(videomainurl)
                 break
-            if status == 200:
-                break
-            '''
         else:
-            break
+                break
         if tries == 0:
             print("No more tries, skipping...")
             return 1
-    ha = session.head(audiomainurl)
-    '''
-    headnum = ha.result().headers.get('X-Head-Seqnum')
-    if headnum:
-        seqnumber = int(headnum) - segmentsoffset
-        print('HEADNUM: %s, SEQNUMBER: %s' % (headnum, seqnumber))
-    else:
-        print('Could not get Head number, skipping...')
-        return 1
-    '''
-    # checkavg = h.headers.get('X-Bandwidth-Avg')
     # Array with all speeds in bps:
-    checkavg = ha.result().headers.get('X-Bandwidth-Avg')
+    checkavg = head.result().headers.get('X-Bandwidth-Avg')
     if checkavg:
         Bandwidths = [[int(checkavg) * 8]]
     else:
         Bandwidths = [[0]]
     for Type in 'Est', 'Est2', 'Est3':
-        bpstype = ha.result().headers.get('X-Bandwidth-%s' % Type)
+        bpstype = head.result().headers.get('X-Bandwidth-%s' % Type)
         if bpstype is not None:
             Bandwidths.append([int(bpstype)*8])
+        else:
+            Bandwidths.append([0])
     print("Bandwidths " + str(Bandwidths))
     return (
         segmentsecs, audiourls, videodata, aid, vid, Bandwidths,
@@ -232,27 +202,28 @@ def get_headseqnum(url):
     if h.result().status_code == 504:
         headnum = 0
     else:
-        headnum = int(h.result().headers.get('X-Head-Seqnum'))
+        hd = h.result().headers.get('X-Head-Seqnum')
+        if hd is not None:
+            headnum = int(hd)
+        else:
+            hd = head.result().headers.get('X-Head-Seqnum')
+            if hd is not None:
+                headnum = int(hd)
     h.result().close()
     return headnum
-    # audiomainurl.replace('keepalive/yes/ip/', 'ip/'),
-    # headers={'Connection': 'close'}, allow_redirects=True
-    # )
 
 
 def main():
-    # a = requests.adapters.HTTPAdapter(max_retries=13)
-    # session.mount('https://', a)
     arg2 = None
     if len(sys.argv) > 1:
         arg1 = sys.argv[1]
         if len(sys.argv) > 2:
             arg2 = sys.argv[2]
-        yth = "http[s]?://(w{3}\.)?youtube.com"
+        yth = r"http[s]?://(w{3}\.)?youtube.com"
         yths = "http[s]?://youtu.be"
         urlpattern1 = yths + '/[A-z0-9_-]{11}$'
-        urlpattern2 = yth + '/watch\?v=([A0-z9_-]{11}$|[A0-z9_-]{11}&.*$)'
-        urlpattern3 = yth + '/(channel/|user/|playlist\?list\=)[A-z0-9_-]+'
+        urlpattern2 = yth + r'/watch\?v=([A0-z9_-]{11}$|[A0-z9_-]{11}&.*$)'
+        urlpattern3 = yth + r'/(channel/|user/|playlist\?list\=)[A-z0-9_-]+'
         if re.search(urlpattern1 + "|" + urlpattern2, arg1):
             videourls = [arg1]
             searchurl = None
@@ -285,19 +256,9 @@ def main():
                     links.append("https://www.youtube.com" + link)
                     # print(videourl)
         videourls = links
-    # print(str(links))
-    # Main for loop:
-    # session = requests.Session()
-    # session.verify = True
     print("%s ITEMS FOUND." % len(videourls))
-    # global session
-    # session = requests.Session()
-    # session = FuturesSession(max_workers=10)
-    # session.mount('https://', requests.adapters.HTTPAdapter(
-    # pool_connections=1000, pool_maxsize=1000, max_retries=50))
     item = 1
     for videourl in videourls:
-        # print('Args: %s' % sys.argv[2])
         if arg2 is not None and item > int(arg2):
             print('All items opened, quitting...')
             return
@@ -311,8 +272,6 @@ def main():
         ffmpegmuxer = None
         basedelays = []
         mindelay = 100
-        # session = FuturesSession(max_workers=10)
-
         if videourl:
             r = session.get(videourl)
         else:
@@ -323,7 +282,6 @@ def main():
             'dashmpd":"(.+?)"', str(soup2.findAll('script')))
         if manifestsearch:
             metadata = get_metadata(manifestsearch, 0, 2)
-            # print(metadata)
             if metadata == 1:
                 item += 1
                 continue
@@ -335,11 +293,19 @@ def main():
                 videodata = metadata[2]
                 aid = metadata[3]
                 vid = metadata[4]
-                # seqnumber = metadata[5] + 2
                 Bandwidths = metadata[5]
                 BandwidthsAvgs = [0, 1, 2, 3]
                 audiomainurl = metadata[6]
                 videomainurl = metadata[7]
+                audiomainurls = []
+                videomainurls = []
+                for ida in range(len(audiourls)):
+                    audiomainurls.append(0)
+                for idv in range(len(videodata)):
+                    videomainurls.append(0)
+                audiomainurls[aid] = audiomainurl
+                videomainurls[vid] = videomainurl
+
         else:
             print('Couldn\'t get Manifest or Video isn\'t Live, skipping...')
             continue
@@ -351,19 +317,23 @@ def main():
             (ffmpegbin, (1000000*segmentsecs))
             )
         playerargs = shlex.split(playercmd)
-        ffmpegbase = subprocess.Popen(
-            ffmpegbaseargs, stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        player = subprocess.Popen(
-                playerargs, stdin=ffmpegbase.stdout, stdout=None, stderr=None)
-        # player = None
+        ffmpegbase = subprocess.Popen(ffmpegbaseargs,
+                                      stdin=subprocess.PIPE,
+                                      stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE)
+        player = subprocess.Popen(playerargs,
+                                  stdin=ffmpegbase.stdout,
+                                  stdout=None,
+                                  stderr=None)
         ffmpegbase.stdout.close()
         if ffmpegbase.poll() is not None:
             print('Error openning main ffmpeg, quitting...')
             session.close()
             quit()
         print("Total video Qualitys: " + str(len(videodata)))
-        headnumber = get_headseqnum(audiomainurl)
+        logging.info("Total video Qualitys: " + str(len(videodata)))
+        headnumber = head.result().headers.get('X-Sequence-Num')
+        # get_headseqnum(audiomainurl)
         if headnumber:
             seqnumber = int(headnumber) - segmentsoffset + 1
             logging.info(
@@ -374,49 +344,33 @@ def main():
             continue
         # Main loop:
         while True:
+            print("TWO SEGMENTS: %s" % twosegmentsdownload)
+
             if player is not None:
                 if player.poll() is not None:
                     print("Player Closed, quitting...")
                     break
-            # audiourl = audiomainurl
-            # videourl = videomainurl
             audiourl = audiomainurl + "sq/" + str(seqnumber)
             videourl = videomainurl + "sq/" + str(seqnumber)
-            # +str(seqnumber)
-            # for Type in audiomainurl, videomainurl:
-
             try:
-                # socka = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                # sockv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 starttime = time.time()
                 ra = session.get(
-                     audiourl, stream=False, timeout=(
+                     audiourl, stream=True, timeout=(
                         3.05, 6),
-                     allow_redirects=True, headers=rheaders)
-                '''
-                if init is None:
-                    time.sleep(5)
-                    init = 1
-                '''
+                     allow_redirects=False, headers=rheaders)
                 rv = session.get(
                      videourl, stream=True, timeout=(
                         3.05, 6),
-                     allow_redirects=True, headers=rheaders)
-                '''
-                if init is None:
-                    time.sleep(5)
-                    init = 1
-                '''
+                     allow_redirects=False, headers=rheaders)
                 if twosegmentsdownload == 1:
                     audiourl2 = audiomainurl + "sq/" + str(seqnumber + 1)
                     videourl2 = videomainurl + "sq/" + str(seqnumber + 1)
                     ra2 = session.get(
-                        audiourl2, stream=False, timeout=(3.05, 6),
+                        audiourl2, stream=True, timeout=(3.05, 6),
                         allow_redirects=True, headers=rheaders)
                     rv2 = session.get(
                         videourl2, stream=True, timeout=(3.05, 6),
                         allow_redirects=True, headers=rheaders)
-                    # rm = grequests.map(murls, size=2)
                     print("VID: " + str(vid) + " Selected ")
                     rm = [[
                         ra.result(), rv.result()], [ra2.result(), rv2.result()]]
@@ -426,20 +380,10 @@ def main():
                 basedelays.append(round((time.time() - starttime)/len(rm), 4))
                 if len(basedelays) > segmentsoffset:
                     del basedelays[0]
-                basedelayavg = sum(basedelays) / len(basedelays)
+                basedelayavg = round(sum(basedelays) / len(basedelays), 4)
                 mindelay = min(min(basedelays), mindelay)
-                # starttimec = time.clock()
-                print("---> DELAY1: " + str(basedelays) + " Seconds ")
+                print("---> BASEDELAYS: " + str(basedelays) + " Seconds ")
                 print("---> MIN DELAY: " + str(mindelay) + " Seconds ")
-                # print('HEADERS' + str(rm[1][1].headers))
-                # print('REQUESTHEADERS' + str(rm[1][1].request.headers))
-                # lanza player if no error:
-                """
-                if init is None:
-                    player = subprocess.Popen(playerargs,
-                    stdin=ffmpegbase.stdout, stdout=None, stderr=None)
-                    init = 2
-                """
                 cont = False
                 wallclocks = []
                 headnumbers = []
@@ -447,29 +391,23 @@ def main():
                 totaldelay = 0.0
                 tries = 0
                 for segment in rm:
-                    for Mtype in range(2):
-                        headnumber = segment[Mtype].headers.get('X-Head-Seqnum')
+                    for mtype in range(2):
+                        headnumber = segment[mtype].headers.get('X-Head-Seqnum')
                         if headnumber:
                             headnumbers.append(int(headnumber))
-                        headtimes.append(segment[Mtype].headers.get(
+                        headtimes.append(segment[mtype].headers.get(
                                 'X-Head-Time-Sec'))
-                        sequencenum = segment[Mtype].headers.get(
+                        sequencenum = segment[mtype].headers.get(
                                 'X-Sequence-Num')
                         wallclocks.append(float(
-                            segment[Mtype].headers.get('X-Walltime-Ms')
+                            segment[mtype].headers.get('X-Walltime-Ms')
                             ))
                         # Check status codes:
-                        status = segment[Mtype].status_code
+                        status = segment[mtype].status_code
                         if status == 200:
                             print("STATUS URL OK: %s" % (status))
-                            '''
-                            history = segment[Mtype].history
-                            if history == 302:
-                                audiomainurl = segment[0].url
-                                videomainurl = segment[1].url
-                            '''
                         elif status == 404 or status == 204:
-                                    segment[Mtype].close()
+                                    segment[mtype].close()
                                     if ffmpegmuxer.poll() is None:
                                         ffmpegmuxer.kill()
                                     print('Error 404,retrying in 1 second...')
@@ -486,7 +424,7 @@ def main():
                                             player.wait()
                                             cont = True
                                     break
-                        elif status > 400 or status >= 302:
+                        elif status > 400 or status == 302:
                                 print(
                                     "Error status: %s, refreshing metadata..."
                                     % status)
@@ -495,35 +433,16 @@ def main():
                                     manifestsearch, aid, vid)
                                 audiourls = metadata[1]
                                 videodata = metadata[2]
-                                audiomainurl = metadata[7]
-                                videomainurl = metadata[8]
+                                audiomainurl = metadata[6]
+                                videomainurl = metadata[7]
                                 cont = True
                                 break
-                    # starttime2 = time.time()
-                    # print('Segment' + str(segment))
-                    # socka = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    # sockv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    ffmpegargs = shlex.split(
-                        '''%s -v 1 -thread_queue_size 1024 -i %s
-                         -thread_queue_size 1024 -i pipe:0 -map 0:0 -map 1:0
-                         -c copy -f mpegts pipe:1'''
-                        % (ffmpegbin, audiofilename)
-                         )
-                    # print('PLAYER ARGS:' + str(ffmpegargs))
-
-                    # for chunk in segment[0].iter_content(chunk_size=None):
-                    #    fd.write(chunk)
-
-                    # ffmpegmuxer.kill()
-                    # ffmpegmuxer.communicate()
-                    # ffmpegmuxer.wait()
                     with open(audiofilename, 'wb') as fd:
                         '''for chunk in segment[0].iter_content(
                                 chunk_size=512):
                                     fd.write(chunk)
                         '''
                         fd.write(segment[0].content)
-                    # segment[0].close()
                     if ffmpegmuxer is not None:
                         print("Waiting previous process...")
                         ffmpegmuxer.communicate()
@@ -533,53 +452,26 @@ def main():
                         print('Waiting player...')
                         time.sleep(1)
                     '''
-                    ffmpegmuxer = subprocess.Popen(
-                            ffmpegargs, bufsize=-1, stdin=subprocess.PIPE,
-                            stdout=ffmpegbase.stdin)
+                    tries = 0
+                    # Open ffmpeg to mux to pipe from pipe:
+                    ffmpegmuxer = subprocess.Popen(ffmpegargs,
+                                                   bufsize=-1,
+                                                   stdin=subprocess.PIPE,
+                                                   stdout=ffmpegbase.stdin)
                     while ffmpegmuxer.poll() is not None:
-                        print("WAITING FFMPEG OPEN...")
-                        time.sleep(1)
-                    # stderr=subprocess.PIP
+                        print("WAITING FFMPEG TO OPEN...")
+                        if tries < 5:
+                            time.sleep(1)
+                        else:
+                            cont = True
+                            break
+                        tries += 1
                     print("Writing....")
-                    # with open(videofilename, 'w+', 0) as fd:
                     print("PRECHUNKS")
-                    # chunk_size=512
-                    for chunk in segment[1].iter_content(
-                            chunk_size=512):
-                                ffmpegmuxer.stdin.write(chunk)
-                    # segment[1].close()
+                    ffmpegmuxer.stdin.write(segment[1].content)
                     print("PRECOMMUNICATE")
-                    ffstatus = ffmpegmuxer.communicate()
                     # Next segment:
                     seqnumber += 1
-
-                    # ffmpegmuxer.stdin.write(segment[1].content)
-                    # time.sleep(1)
-                    # while True:
-                    '''
-                    try:
-                        socka.connect((host, aport))
-                    except:
-                        print("Waiting localserver...")
-                        time.sleep(0.5)
-                    #   else:
-                    #        break
-                    #try:
-                    for chunk in segment[0].iter_content(chunk_size=128):
-                        socka.send(chunk)
-                    socka.close()
-                    # data = s.recv(1024)
-                    sockv.connect((host, vport))
-                    for chunk in segment[1].iter_content(chunk_size=128):
-                        sockv.send(chunk)
-                    sockv.close()
-                    #except:
-                    #    print("Exception ocurred")
-                    #sockv.close()
-                    '''
-                # if twosegmentsdownload == 1:
-                    # ra2.result().close()
-                    # rv2.result().close()
                 if cont:
                     cont = False
                     continue
@@ -601,28 +493,15 @@ def main():
                 print("IOError Exception")
                 logging.info("IOError Exception")
                 ReleaseConn(rm)
-            """finally:
-                ##os.remove(audiofilename)
-                #os.remove(videofilename)
-                print("Retrying in %s secs..." % segmentsecs)
-                time.sleep(segmentsecs)
-            """
-            # Download delays:
             # Delays:
             totaldelay = round((time.time() - starttime) / len(rm), 4)
-            # totaldelay = (time.time() - basedelays[-1]) / len(rm)
-            print("---> DELAY2: " + str(totaldelay) + " Seconds ")
+            print("---> TOTAL DELAY: " + str(totaldelay) + " Seconds ")
             delays.append(round(totaldelay, 4))
             if len(delays) > segmentsoffset:
                 del delays[0]
             delayavg = round(sum(delays) / segmentsoffset, 2)
             print("---> Delays " + str(delays))
             print("---> Delay Avg: " + str(delayavg))
-
-            # Get bandwidth speeds:
-            # if Bandwidths[0][0] == 0:
-            #    Bandwidths[0][0] = int(rv.headers['X-Bandwidth-Avg']) * 8
-            # .get returns empty if not found:
             BandwidthAvg = rm[-1][1].headers.get('X-Bandwidth-Avg')
             if BandwidthAvg:
                 Bandwidths[0].append(int(BandwidthAvg) * 8)
@@ -640,10 +519,7 @@ def main():
             for i in range(len(Bandwidths)):
                 while len(Bandwidths[i]) > segmentsoffset:
                     del Bandwidths[i][0]
-                BandwidthsAvgs[i] = sum(Bandwidths[i]) / len(Bandwidths[i])
-            # Print Bandwidths values:
-            # print("BANDWIDTHS: " + str(Bandwidths))
-            # print("BANDWIDTHSAVG: " + str(BandwidthsAvgs))
+                BandwidthsAvgs[i] = int(sum(Bandwidths[i]) / len(Bandwidths[i]))
             print(
                   "Bandwidth Est Avg: " + str(BandwidthsAvgs[1]) + " bps "
                   + str(int((BandwidthsAvgs[1] / 8) / 1024)) + " kB/s")
@@ -654,25 +530,26 @@ def main():
                   "Bandwidth Est3 Avg: " + str(BandwidthsAvgs[3]) + " bps "
                   + str(int((BandwidthsAvgs[3] / 8) / 1024)) + " kB/s")
             # Check to go down:
-            #  + (basedelays[-1]/2)
             selectedbandwidth = int(videodata[vid]['bandwidth']) + 124000
-            if(vid > 0 and delayavg > segmentsecs and
+            if(vid > 0 and delayavg > segmentsecs + basedelays[-1] and
                 round(basedelays[-1], 1) < segmentsecs*0.7 and
                 round(delays[-1], 1) > segmentsecs + 0.2 and
                     delays[-1] < segmentsecs * segmentsoffset * 3):
                         bandwidth_ok = False
-                        '''
-                        bandwidth_ok = True
-                        for bandidx in range(len(BandwidthsAvgs)):
-                            if BandwidthsAvgs[bandidx] < selectedbandwidth:
-                                bandwidth_ok = False
-                                break
-                        '''
+                        print("Bandwidth to Down OK: %s" % bandwidth_ok)
+                        logging.info("Bandwidth to Down OK: %s" % bandwidth_ok)
                         if not bandwidth_ok:
                             rest = int(delays[-1] / segmentsecs)
                             if rest > vid:
                                 rest = vid
                             vid -= rest
+                            if videomainurls[vid] != 0:
+                                videomainurl = videomainurls[vid]
+                            else:
+                                videomainurl, vstatus = check_url(
+                                    videodata[vid].text)
+                                if vstatus == 200:
+                                    videomainurls[vid] = videomainurl
                             logging.info('Going DOWN, to VID: %s' % vid)
                             logging.info("BASE DELAYS: %s" % str(basedelays))
                             logging.info(
@@ -680,34 +557,22 @@ def main():
                             logging.info('DELAYS: %s' % str(delays))
                             logging.info('DELAY AVG: %s' % str(delayavg))
                             logging.info("MIN DELAY: %s" % str(mindelay))
-                            videomainurl = videodata[vid].text
                             logging.info('NEW VIDEO URL: %s' % videomainurl)
             # Check remaining segments:
             if headnumbers:
                 headnumber = max(headnumbers)
-            '''if not headnumber:
-                headnumber = get_headseqnum(audiomainurl)
-            '''
             remainsegms = headnumber - (seqnumber - 1)
             if remainsegms < 0:
                 remainsegms = 0
-            elif remainsegms > segmentsoffset*2:
+            elif remainsegms > segmentsoffset and autoresync == 1:
+                seqnumber = get_headseqnum(videomainurl)
                 print('Resyncing...')
                 logging.info('Resyncing...')
-                seqnumber = headnumber
                 ReleaseConn(rm)
-                metadata = get_metadata(manifestsearch, aid, vid)
-                audiourls = metadata[1]
-                videodata = metadata[2]
-                audiomainurl = metadata[6]
-                videomainurl = metadata[7]
-                #time.sleep(segmentsecs)
-            print('HEAD TIMES: %s' % headtimes)
             print(
                 "HEAD NUMBER: %s, SEQNUMBER: %s, REMAINING SEGMENTS:%s"
                 % (headnumber, seqnumber, remainsegms))
             if mindelay > segmentsecs * 0.75:
-                # videomainurl = videodata[0].text
                 logging.info(
                     'Min delay to high: %s seconds, playback not realistic' %
                     mindelay)
@@ -731,57 +596,77 @@ def main():
                         videodata = metadata[2]
                         audiomainurl = metadata[6]
                         videomainurl = metadata[7]
-                # time.sleep(segmentsecs-elapsed3)
-                # delaytogoup = (segmentsecs + ( mindelay / 2 )) / 2
-                # delaytogoup = (segmentsecs / 2) + (mindelay / 2)
-                delaytogoup = max(mindelay * 2, segmentsecs/2)
+                sen = (6 - vid)
+                if sen < 2:
+                    sen = 2
+                delaytogoup = max(mindelay * sen, segmentsecs/2)
                 elapsed3 = round(time.time() - starttime, 4)
                 print("---> DELAY3 (2 segments + ffmpeg): " + str(elapsed3))
                 # Local wallclock timing:
-                timesincedown = totaldelay - basedelays[-1]
-                # - (segmentsecs/10)
-                # CPU time wallclock timing:
-                # timesincedownc = (time.clock() - starttimec ) * 100
+                timesincedown = round(elapsed3 - basedelays[-1], 4)
                 # Wallclock Milisecs from headers:
                 timesincedownh = round(
                     (time.time() - (max(wallclocks)/1000)), 4)
                 print('WALLCLOCK LOCAL : %s' % timesincedown)
-                # print('CLOCK CPU TIME  : %s' % timesincedownc)
                 print('WALLCLOCK SERVER: %s' % timesincedownh)
                 # Check to get more video quality :
-                if (
-                    vid < len(videodata) - 1 and
+                delaytogoup = segmentsecs * 0.7
+                if (vid < len(videodata) - 1 and
                     delayavg < delaytogoup and
                     delays[-1] < delaytogoup and
                         basedelayavg < segmentsecs/2):
-                        for bandidx in range(len(BandwidthsAvgs)):
-                            bandwidth_ok = False
-                            if BandwidthsAvgs[bandidx] > selectedbandwidth * 2:
+                        bandidx = int((2 + vid) / 2)
+                        bandidxN = bandidx + 1
+                        if bandidxN >= len(BandwidthsAvgs):
+                            bandidxN = len(BandwidthsAvgs) - 1
+                        if ((BandwidthsAvgs[bandidx] >
+                           selectedbandwidth * 2.5 and
+                           BandwidthsAvgs[bandidxN] >
+                           selectedbandwidth * 2.5) and
+                           (BandwidthsAvgs[0] > selectedbandwidth * 2 or
+                           BandwidthsAvgs[0] == 0)):
                                 bandwidth_ok = True
-                            else:
-                                break
+                        else:
+                            bandwidth_ok = False
+                        print("Bandwidth to Up OK: %s" % bandwidth_ok)
+                        logging.info("Bandwidth to Up OK: %s" % bandwidth_ok)
                         if bandwidth_ok:
                             print("Getting more video quality...")
                             vid += 1
+                            if videomainurls[vid] != 0:
+                                videomainurl = videomainurls[vid]
+                            else:
+                                videomainurl, vstatus = check_url(
+                                    videodata[vid].text)
+                                if vstatus == 200:
+                                    videomainurls[vid] = videomainurl
                             logging.info('Going UP, to VID: %s' % vid)
                             logging.info("BASE DELAYS: %s" % str(basedelays))
                             logging.info('DELAYS: %s' % str(delays))
                             logging.info('DELAY AVG: %s' % str(delayavg))
+                            logging.info('SELECTED BAND: %s' % str(
+                                selectedbandwidth))
+                            logging.info('BANDWIDTH AVG: %s' % str(
+                                BandwidthsAvgs[bandidx]))
+                            logging.info('BANDWIDTHNext AVG: %s' % str(
+                                BandwidthsAvgs[bandidxN]))
                             logging.info("MIN DELAY: %s" % str(mindelay))
                             logging.info('WALLCLOCK LOCAL : %s' % timesincedown)
                             logging.info('WALLCLOCK SERVER:%s' % timesincedownh)
-                            videomainurl = videodata[vid].text
                             logging.info('NEW VIDEO URL: %s' % videomainurl)
-                # remainsegms = 0
-                sleepsecs = ((len(rm) * segmentsecs) - (
-                            (remainsegms * segmentsecs) + timesincedown))
-                # + ( segmentsecs/3) + prevsleepsecs
+                if twosegmentsdownload == 1:
+                    sleepsecs = ((len(rm) * segmentsecs) - (
+                                    (remainsegms * segmentsecs) +
+                                    (elapsed3 * sens)))
+                else:
+                    if remainsegms == 0:
+                        sleepsecs = segmentsecs - elapsed3
+                    else:
+                        sleepsecs = 0
                 if sleepsecs < 0:
-                    # prevsleepsecs = sleepsecs
                     sleepsecs = 0
                 else:
                     prevsleepsecs = 0
-                # time.sleep(sleepsecs)
                 # for times in range(times):
                 if player.poll() is not None:
                     print("Player Closed, quitting...")
@@ -790,24 +675,9 @@ def main():
                 logging.info(
                     "Sleeping %s seconds..." % str(round(sleepsecs, 3)))
                 time.sleep(round(sleepsecs, 3))
-                '''
-                tries = 0
-                headnumber = get_headseqnum(audiomainurl)
-                while headnumber < seqnumber + (len(rm) - 1):
-                    time.sleep(segmentsecs/2)
-                    headnumber = get_headseqnum(audiomainurl)
-                    print("HEAD UPDATED: %s" % headnumber)
-                    print("Waiting next segment generation...")
-                    tries += 1
-                    if tries == 3:
-                        print('Transmission finished, waiting player close...')
-                        player.wait()
-                        break
-                '''
         # After for:
         ReleaseConn(rm)
         item += 1
-    # session.close()
 
 
 with FuturesSession(max_workers=10) as session:
@@ -815,6 +685,4 @@ with FuturesSession(max_workers=10) as session:
         'https://', requests.adapters.HTTPAdapter(
             pool_connections=1000, pool_maxsize=1000, max_retries=50))
     main()
-#os.remove('/tmp/dash2.0.pid')
-#os.killpg(int(os.getpgrp()), signal.SIGTERM)
-#os.wait()
+
