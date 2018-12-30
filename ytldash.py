@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+.#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # pip[2|3] install bs4 lxml pyopenssl requests-futures requests
 from bs4 import BeautifulSoup
@@ -34,7 +34,7 @@ os.setpgrp()
 with open('/tmp/dash2.0.pid', 'w') as fd:
     fd.write(str(os.getpgrp()))
 
-ffmpegbin = "/home/jmf/bin/ffmpeg"
+ffmpegbin = "./ffmpeg"
 audiofilename = "/dev/shm/audio"
 ffmpegargs = shlex.split('''%s -v 1 -thread_queue_size 1024 -i %s
     -thread_queue_size 1024 -i pipe:0 -map 0:0 -map 1:0
