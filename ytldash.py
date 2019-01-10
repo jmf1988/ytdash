@@ -33,7 +33,6 @@ os.setpgrp()
 with open('/tmp/dash2.0.pid', 'w') as fd:
     fd.write(str(os.getpgrp()))
 ffmpegbin = "/home/jmf/bin/ffmpeg"
-audiofilename = "/dev/shm/audio"
 ffmpegargs = shlex.split('''%s -v 0 -thread_queue_size 100000 -i -
     -thread_queue_size 100000 -i - -c copy -f mpegts pipe:1''' % (ffmpegbin))
 pid = os.getpid()
