@@ -32,7 +32,7 @@ if os.path.isfile('/tmp/dash2.0.pid'):
 os.setpgrp()
 with open('/tmp/dash2.0.pid', 'w') as fd:
     fd.write(str(os.getpgrp()))
-ffmpegbin = "/home/jmf/bin/ffmpeg"
+ffmpegbin = "ffmpeg"
 ffmpegargs = shlex.split('''%s -v 0 -thread_queue_size 100000 -i -
     -thread_queue_size 100000 -i - -c copy -f mpegts pipe:1''' % (ffmpegbin))
 pid = os.getpid()
@@ -50,7 +50,7 @@ playercmd = """mpv --force-seekable=yes --demuxer-max-back-bytes=%s
                  mpvcachesize * 1,
                  mpvcachesize * 1024,
                  mpvcachesize * 1024)
-# playercmd = 'mpv -'
+# playercmd = 'vlc -'
 maxfps = 60
 autoresync = 1  # Drop segments on high delays to keep live
 
