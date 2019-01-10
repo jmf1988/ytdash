@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# pip[2|3] install bs4 lxml pyopenssl requests-futures requests
+# pip[2|3] install bs4 lxml pyopenssl requests
 from bs4 import BeautifulSoup
 from multiprocessing.dummy import Pool as ThreadPool
 import requests
@@ -102,7 +102,6 @@ def check_url(url):
 def get_metadata(videourl, aid, vid):
     logging.info("Youtube URL: %s" % videourl)
     r = session.get(videourl)
-    # soup2 = BeautifulSoup(r.text, "lxml")
     manifestsurl = None
     manifesturlsearch = re.findall('(dashmpd|dashManifestUrl)":"(.+?)"' + '|' +
                                '"(https://manifest.googlevideo.com/' +
@@ -116,7 +115,6 @@ def get_metadata(videourl, aid, vid):
     else:
         logging.info('Couldn\'t extract Manifest URL, skipping item...')
         return 1
-    logging.info("Manifest Search: %s" % manifesturlsearch)
     logging.info("Manifest URL: %s" % manifesturl)
     offline = re.search('force_finished|playback_host', str(manifesturl))
     tries = 5
@@ -172,7 +170,6 @@ def get_metadata(videourl, aid, vid):
                 del videodata[idx]
             else:
                 idx += 1
-        # logging.info("VIDEODATA %s" % videodata)
         aid = aid
         vid = vid
         murls = [audiourls[aid].text, videodata[vid].text]
@@ -517,7 +514,6 @@ def main():
                     videototalurl = videomainurl + "sq/" + str(
                                                            int(seqnumber + sid))
                     murls.append(videototalurl)
-                logging.info("Youtube URL: %s" % videourl)
                 pool = ThreadPool(len(murls))
                 results = pool.imap(get_media, murls)
                 pipe1 = os.pipe()
