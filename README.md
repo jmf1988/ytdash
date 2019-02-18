@@ -1,11 +1,15 @@
 # ytlivedash
-Python script to play You Tube Live DASH H264 streams using custom local player in Linux
+The aim of this project is to have native performance when playing youtube videos without losing adaptative video playback, which similar projects lacks, for this latency is a priority, so with a combination of parallelized download and manifestless DASH  this can be achieved.
 
-Dependencies: mpv (recommended and default), ffmpeg, python3
+Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5)
 
-Python dependencies: BeatifulSoup4, requests, lxml, pyopenssl 
+Python dependencies: requests 
 
-Dependencies instalation: pip3 install bs4 requests lxml pyopenssl --user
+Dependencies instalation: 
+Debian based:
+-- apt-get install python3-requests ffmpeg mpv
+requests:
+-- pip3 install requests --user
 
 Usage:
 
