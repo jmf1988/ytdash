@@ -13,11 +13,11 @@ Pip:
 - pip3 install requests --user
 
 Usage: 
-
-ytdash.py [-h] [--version] [-quiet] [-search] [-maxresults MAXRESULTS]\
-	      [-debug] [-player PLAYER] [-maxfps MAXFPS] [-maxband MAXBAND]\
-          [-maxheight MAXHEIGHT] [-maxwidth MAXWIDTH] [-ffmpeg FFMPEG]\
-          [-fixed] [-offset OFFSET]  URL|QUERY [URL|QUERY ...]
+<pre>
+ytdash.py [-h] [--version] [-quiet] [-search] [-maxresults MAXRESULTS]
+          [-debug] [-player PLAYER] [-maxfps MAXFPS] [-maxband MAXBAND]
+          [-maxheight MAXHEIGHT] [-maxwidth MAXWIDTH] [-ffmpeg FFMPEG]
+          [-fixed] [-offset OFFSET]  URL|QUERY  [URL|QUERY ...]
 
 Youtube DASH video playback.
 
@@ -25,34 +25,30 @@ positional arguments:
   URL|QUERY             URLs or search queries of videos to play
 
 optional arguments:
-  -h, --help            show this help message and exit
-  --version             show program's version number and exit
-  -quiet, -q            enable quiet mode (default: False)
-  -search, -s           search mode (default: False)
-  -maxresults MAXRESULTS, -mr MAXRESULTS
-                        search max results (default: 5)
-  -debug, -d            enable debug mode (default: False)
-  -player PLAYER, -p PLAYER
-                        player bin name, (default: mpv)
-  -maxfps MAXFPS, -mf MAXFPS
-                        max video fps to allow (default: 60)
-  -maxband MAXBAND, -mb MAXBAND
-                        max video bandwidth in kB/s to allow when possible
-                        (default: 700)
-  -maxheight MAXHEIGHT, -mh MAXHEIGHT
-                        max video heigth to allow (default: 720)
-  -maxwidth MAXWIDTH, -mw MAXWIDTH
-                        max video width to allow (default: 1360)
-  -ffmpeg FFMPEG, -ff FFMPEG
-                        ffmpeg location route (default: ffmpeg)
-  -fixed, -f            Play a fixed video quality instead of doing bandwidth
-                        adaptive quality change, This is the max set from
-                        options (default: False)
-  -offset OFFSET, -o OFFSET
-                        Time or segments offset from where start to play,
-                        (i.e: 2h, 210m, 3000s or 152456, for hours, minutes,
-                        seconds and nº of segment respectively.)
+  -h, --help                                    show this help message and exit
+  --version                                     show program's version number and exit
+  -quiet, -q                                    enable quiet mode (default: False)
+  -search, -s                                   search mode (default: False)
+  -maxresults MAXRESULTS, -mr MAXRESULTS        search max results (default: 5)
+  -debug, -d                                    enable debug mode (default: False)
+  -player PLAYER, -p PLAYER                     player bin name, (default: mpv)
+  -maxfps MAXFPS, -mf MAXFPS                    max video fps to allow (default: 60)
+  -maxband MAXBAND, -mb MAXBAND                 max video bandwidth in kB/s to allow when possible
+                                                (default: 700)
+  -maxheight MAXHEIGHT, -mh MAXHEIGHT           max video heigth to allow (default: 720)
+  -maxwidth MAXWIDTH, -mw MAXWIDTH              max video width to allow (default: 1360)
+  
+  -ffmpeg FFMPEG, -ff FFMPEG                    ffmpeg location route (default: ffmpeg)
+  
+  -fixed, -f                                    Play a fixed video quality instead of doing bandwidth
+                                                adaptive quality change, This is the max set from
+                                                options (default: False)
+  
+  -offset OFFSET, -o OFFSET                     Time or segments offset from where start to play,
+                                                (i.e: 2h, 210m, 3000s or 152456, for hours, minutes,
+                                                seconds and nº of segment respectively.)
 
+</pre>
 Examples:
 
 To play a single video are all equivalent:
