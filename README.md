@@ -6,10 +6,11 @@ Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), p
 Python dependencies: requests 
 
 Dependencies instalation: 
-Debian based:
--- apt-get install python3-requests ffmpeg mpv
-requests:
--- pip3 install requests --user
+- Debian based:
+apt-get install python3-requests ffmpeg mpv
+
+Pip:
+- pip3 install requests --user
 
 Usage: 
 
@@ -52,6 +53,7 @@ optional arguments:
                         Time or segments offset from where start to play,
                         (i.e: 2h, 210m, 3000s or 152456, for hours, minutes,
                         seconds and nº of segment respectively.)
+
 Examples:
 
 To play a single video are all equivalent:
@@ -62,9 +64,9 @@ To play a single video are all equivalent:
 
 To search a live video in a channel listing the first 10 results to choose or playing if only one live video found:
 
-ytdash.py "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -maxresults 10
-ytdash.py "//youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -maxresults 10
-ytdash.py "https://www.youtube.com/user/skynews" -s -maxresults 10
+- ytdash.py "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -maxresults 10
+- ytdash.py "//youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -maxresults 10
+- ytdash.py "https://www.youtube.com/user/skynews" -s -maxresults 10
 
 are all equivalent.
 
@@ -72,7 +74,7 @@ Extreme example:
 
 To play first 5 videos in a channel one by one with a max height of 720, max FPS of 30, using a max bandwidth of 400 kB/s, with an offset, if live, of 30 minutes and with bandwidth adaptative mode disabled:
 
-ytdash.py "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -f -maxresults 5 -offset 30m -maxfps 30 -maxheight 720 -maxband 400
+- ytdash.py "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -f -maxresults 5 -offset 30m -maxfps 30 -maxheight 720 -maxband 400
 
 That will discard all videos above the first limit reached and play the maximun quality left in fixed mode (the selected quality will be not switched to a lower one even if delays or bandwidth drops are detected.)
 
