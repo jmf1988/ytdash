@@ -14,11 +14,10 @@ Pip:
 
 Usage: 
 
-ytdash [-h] [--version] [-quiet] [-search] [-maxresults MAXRESULTS]
-              [-debug] [-player PLAYER] [-maxfps MAXFPS] [-maxband MAXBAND]
-              [-maxheight MAXHEIGHT] [-maxwidth MAXWIDTH] [-ffmpeg FFMPEG]
-              [-fixed] [-offset OFFSET]
-              URL|QUERY [URL|QUERY ...]
+ytdash.py [-h] [--version] [-quiet] [-search] [-maxresults MAXRESULTS]\
+	      [-debug] [-player PLAYER] [-maxfps MAXFPS] [-maxband MAXBAND]\
+          [-maxheight MAXHEIGHT] [-maxwidth MAXWIDTH] [-ffmpeg FFMPEG]\
+          [-fixed] [-offset OFFSET]  URL|QUERY [URL|QUERY ...]
 
 Youtube DASH video playback.
 
