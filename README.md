@@ -1,5 +1,5 @@
 # ytlivedash
-The aim of this project is to have native performance when playing youtube videos without losing adaptative video playback, which similar projects lacks, for this latency is a priority, so with a combination of parallelized download and manifestless DASH  this can be achieved.
+The aim of this project is to have native performance when playing youtube videos without losing adaptative video playback, which similar projects lacks, for this latency is a priority, so with a combination of asynced media streaming,DASH protocol and keep alive connections this can be achieved.
 
 Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5)
 
@@ -14,10 +14,18 @@ Pip:
 
 Usage: 
 <pre>
-ytdash.py [-h] [--version] [-quiet] [-search] [-maxresults MAXRESULTS]
-          [-debug] [-player PLAYER] [-maxfps MAXFPS] [-maxband MAXBAND]
-          [-maxheight MAXHEIGHT] [-maxwidth MAXWIDTH] [-ffmpeg FFMPEG]
-          [-fixed] [-offset OFFSET]  URL|QUERY  [URL|QUERY ...]
+usage: ytdash [-h] [--version] [-quiet] [-search] [-nonlive]
+              [-sortby {relevance,viewCount,videoCount,date,rating,title,rating}]
+              [-eventtype {live,upcoming,completed}]
+              [-safesearch {moderate,none,strict}]
+              [-duration {any,long,medium,short}]
+              [-videotype {any,episode,movie}]
+              [-type {video,channel,playlist}] [-definition {hd,sd,any}]
+              [-license {creativeCommon,youtube,any}] [-maxresults MAXRESULTS]
+              [-debug] [-player PLAYER] [-maxfps MAXFPS] [-maxband MAXBAND]
+              [-maxheight MAXHEIGHT] [-maxwidth MAXWIDTH] [-ffmpeg FFMPEG]
+              [-fixed] [-offset OFFSET]
+              URL|QUERY [URL|QUERY ...]
 
 Youtube DASH video playback.
 
@@ -25,28 +33,51 @@ positional arguments:
   URL|QUERY             URLs or search queries of videos to play
 
 optional arguments:
-  -h, --help                                    show this help message and exit
-  --version                                     show program's version number and exit
-  -quiet, -q                                    enable quiet mode (default: False)
-  -search, -s                                   search mode (default: False)
-  -maxresults MAXRESULTS, -mr MAXRESULTS        search max results (default: 5)
-  -debug, -d                                    enable debug mode (default: False)
-  -player PLAYER, -p PLAYER                     player bin name, (default: mpv)
-  -maxfps MAXFPS, -mf MAXFPS                    max video fps to allow (default: 60)
-  -maxband MAXBAND, -mb MAXBAND                 max video bandwidth in kB/s to allow when possible
-                                                (default: 700)
-  -maxheight MAXHEIGHT, -mh MAXHEIGHT           max video heigth to allow (default: 720)
-  -maxwidth MAXWIDTH, -mw MAXWIDTH              max video width to allow (default: 1360)
-  
-  -ffmpeg FFMPEG, -ff FFMPEG                    ffmpeg location route (default: ffmpeg)
-  
-  -fixed, -f                                    Play a fixed video quality instead of doing bandwidth
-                                                adaptive quality change, This is the max set from
-                                                options (default: False)
-  
-  -offset OFFSET, -o OFFSET                     Time or segments offset from where start to play,
-                                                (i.e: 2h, 210m, 3000s or 152456, for hours, minutes,
-                                                seconds and nº of segment respectively.)
+  -h, --help            show this help message and exit
+  --version             show program's version number and exit
+  -quiet, -q            enable quiet mode (default: False)
+  -search, -s           search mode (default: False)
+  -nonlive, -nl         search also non-live videos (default: False)
+  -sortby {relevance,viewCount,videoCount,date,rating,title,rating}, -sb {relevance,viewCount,videoCount,date,rating,title,rating}
+                        sorting order for the search results (default:
+                        relevance)
+  -eventtype {live,upcoming,completed}, -et {live,upcoming,completed}
+                        filter results by live event type(default: live)
+  -safesearch {moderate,none,strict}, -ss {moderate,none,strict}
+                        Safe search mode to use if any(default: moderate)
+  -duration {any,long,medium,short}, -dur {any,long,medium,short}
+                        filter results by video duration(default: any)
+  -videotype {any,episode,movie}, -vt {any,episode,movie}
+                        filter results by video type (default: any)
+  -type {video,channel,playlist}
+                        filter results by type of resource (default: video)
+  -definition {hd,sd,any}, -vd {hd,sd,any}
+                        filter results by video definition (default: any)
+  -license {creativeCommon,youtube,any}
+                        filter results by video livense type (default: any)
+  -maxresults MAXRESULTS, -mr MAXRESULTS
+                        search max results (default: 5)
+  -debug, -d            enable debug mode (default: False)
+  -player PLAYER, -p PLAYER
+                        player bin name, (default: mpv)
+  -maxfps MAXFPS, -mf MAXFPS
+                        max video fps to allow (default: 60)
+  -maxband MAXBAND, -mb MAXBAND
+                        max video bandwidth in kB/s to allow when possible
+                        (default: 700)
+  -maxheight MAXHEIGHT, -mh MAXHEIGHT
+                        max video heigth to allow (default: 720)
+  -maxwidth MAXWIDTH, -mw MAXWIDTH
+                        max video width to allow (default: 1360)
+  -ffmpeg FFMPEG, -ff FFMPEG
+                        ffmpeg location route (default: ffmpeg)
+  -fixed, -f            Play a fixed video quality instead of doing bandwidth
+                        adaptive quality change, This is the max set from
+                        options (default: False)
+  -offset OFFSET, -o OFFSET
+                        Time or segments offset from where start to play,
+                        (i.e: 2h, 210m, 3000s or 152456, for hours, minutes,
+                        seconds and nº of segment respectively.)
 
 </pre>
 Examples:
