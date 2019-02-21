@@ -529,7 +529,7 @@ if __name__ == '__main__':
                                      description='Youtube DASH video playback.')
     parser.add_argument('urls', metavar='URL|QUERY', type=str, nargs='+',
                         help='URLs or search queries of videos to play')
-    parser.add_argument('--version', action='version', version='%(prog)s 0.1')
+    parser.add_argument('--version', action='version', version='%(prog)s 0.11')
     parser.add_argument('-quiet', '-q', action='store_true',
                         help='enable quiet mode (default: %(default)s)')
     parser.add_argument('-search', '-s', action='store_true',
@@ -662,7 +662,7 @@ if __name__ == '__main__':
                         pool_maxsize=10,
                         max_retries=1))
         # (X11; Linux x86_64)
-        session.headers['User-Agent'] += ' ytdash/0.1 (gzip)'
+        session.headers['User-Agent'] += ' ytdash/0.11 (gzip)'
         for urlid in range(len(args.urls)):
             playerargs = playerbaseargs
             url = urlparse(args.urls[urlid])
