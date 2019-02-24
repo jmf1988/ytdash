@@ -1,13 +1,13 @@
 # ytlivedash
 The aim of this project is to have native performance when playing youtube videos without losing adaptative video playback, which similar projects lacks, for this latency is a priority, so with a combination of asynced media streaming,DASH protocol and keep alive connections this can be achieved.
 
-Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5)
+Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5 or pycurl
 
-Python dependencies: requests 
+Python dependencies: requests and/or pycurl (Depending which version)
 
 Dependencies instalation: 
 - Debian based:
-apt-get install python3-requests ffmpeg mpv
+apt-get install python3-requests | python3-pycurl ffmpeg mpv
 
 Pip:
 - pip3 install requests --user
