@@ -307,6 +307,8 @@ def ffmuxer(ffmpegbin, ffmuxerstdout, apipe, vpipe):
 
 def get_media(data):
     baseurl, segmenturl, pipe, init = data
+    retries503 = 5
+    retries40x = 5
     conerr = 0
     twbytes = 0
     acceptranges = None
@@ -408,6 +410,7 @@ def get_media(data):
                     # logging.debug("CONTENT LENGTH: %s" % contentlength)
                 # Check status codes:
                 if status == 200 or status == 206:
+                    retries503 = retries40x = 5
                     logging.debug("Getting Media Content.....")
                     if response.history:
                         if response.history[-1].status_code == 302:
@@ -455,17 +458,23 @@ def get_media(data):
                     if status == 204:
                         logging.debug('Retrying in %s secs' % segsecs)
                     if status == 503:
-                        logging.debug("Trying redirection...")
-                        gvideohost = url.split('/')[2].split('.')[0]
-                        url = url.replace(gvideohost, "redirector")
-                    elif status == 404 or status == 400 or status == 403:
-                        if live:
-                            logging.debug('Refreshing metadata...')
-                            metadata = get_mediadata(videoid)
-                            if(type(metadata) is tuple and
-                               not metadata[6].get('isLive')):
-                                logging.debug("Transmission looks ended...")
-                                end = 1
+                        if retries503:
+                            logging.debug("Trying redirection...")
+                            gvideohost = url.split('/')[2].split('.')[0]
+                            url = url.replace(gvideohost, "redirector")
+                            retries503 -= 1
+                    elif(status == 404 or status == 400 or status == 403 or
+                         not retries503):
+                            if retries40x:
+                                logging.debug('Refreshing metadata...')
+                                metadata = get_mediadata(videoid)
+                                if(type(metadata) is tuple and
+                                   not metadata[6].get('isLive')):
+                                    logging.debug("Transmission looks ended...")
+                                    end = 1
+                                retries40x -= 1
+                            else:
+                                return 2
                     time.sleep(segsecs)
                     continue
         except (BrokenPipeError) as oserr:
@@ -529,7 +538,7 @@ if __name__ == '__main__':
                                      description='Youtube DASH video playback.')
     parser.add_argument('urls', metavar='URL|QUERY', type=str, nargs='+',
                         help='URLs or search queries of videos to play')
-    parser.add_argument('--version', action='version', version='%(prog)s 0.11')
+    parser.add_argument('--version', action='version', version='%(prog)s 0.1')
     parser.add_argument('-quiet', '-q', action='store_true',
                         help='enable quiet mode (default: %(default)s)')
     parser.add_argument('-search', '-s', action='store_true',
@@ -662,7 +671,7 @@ if __name__ == '__main__':
                         pool_maxsize=10,
                         max_retries=1))
         # (X11; Linux x86_64)
-        session.headers['User-Agent'] += ' ytdash/0.11 (gzip)'
+        session.headers['User-Agent'] += ' ytdash/0.1 (gzip)'
         for urlid in range(len(args.urls)):
             playerargs = playerbaseargs
             url = urlparse(args.urls[urlid])
@@ -938,6 +947,7 @@ if __name__ == '__main__':
                     aid = 2
                     vsegoffset = len(videodata[2][1]) - 1
                     asegoffset = len(audiodata[2][2]) - 1
+                    logging.debug('ASEGOFFSET: %s' % asegoffset)
                     initaurl = audiodata[aid][1].text
                     initaurl += audiodata[aid][2][0].get('sourceURL')
                     initvurl = videodata[vid][0].text
@@ -953,7 +963,6 @@ if __name__ == '__main__':
                     rangeend = videodata[vid]['indexRange'].get('end')
                     if rangestart:
                         initvurl += '&range=%s-%s' % (rangestart, rangeend)
-                logging.debug('ASEGOFFSET: %s' % asegoffset)
                 initv = session.get(initvurl).content
                 inita = session.get(initaurl).content
                 logging.debug("IDS MEDIADATA %s %s" % (aid, vid))
@@ -1383,14 +1392,14 @@ if __name__ == '__main__':
                 else:
                     bandwidthup = 1
                     bandwidthdown = 1
+                bandwidthdown = 1
                 # CHECK TO GO DOWN: -------------------------------------------#
                 if(not args.fixed and vid > minvid and ffmuxerdelay < 1 and
                    bandwidthdown and delays[-1] <= segsecs * len(videodata) and
-                   ((segsecs <= 2 and delayavg > segsecs * 1.0 and
-                     delays[-1] > segsecs + 0.0) or
+                   ((segsecs <= 2 and delayavg > segsecs * 1.3 and
+                     delays[-1] > segsecs * 1.3) or
                         (segsecs > 2 and delayavg > segsecs and
                          delays[-1] > segsecs))):
-                            bandwidthdown = 0
                             sys.stdout.write('\rDelays detected, switching to' +
                                              ' lower video quality...')
                             sys.stdout.flush()
