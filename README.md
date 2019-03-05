@@ -1,5 +1,5 @@
-#livedash
-The aim of this project is to allow native performance using local player when playing youtube live videos without losing adaptative video playback, which is important in live content for having less time to buffer the content, to do all this latency improvements are approached with a combination of parallelized https requests and media streaming, DASH protocol and keep alive connections.
+# livedash
+The aim of this project is to allow native performance using local player when playing youtube live videos without losing adaptative video playback, which is more important when streaming live content because there is less buffer available to pull from, to do all this latency improvements are approached with a combination of parallelized https requests and media streaming, DASH protocol and keep alive connections.
 
 Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5)
 
@@ -100,7 +100,7 @@ are all equivalent.
 
 Extreme example:
 
-To play first 5 videos in a channel one by one with a max height of 720, max FPS of 30, using a max bandwidth of 400 kB/s, with an offset, of =-30 minutes and with bandwidth adaptative mode disabled:
+To play first 5 videos in a channel one by one with a max height of 720, max FPS of 30, using a max bandwidth of 400 kB/s, with an offset, of -30 minutes and with bandwidth adaptative mode disabled:
 
 - ytdash.py "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -f -maxresults 5 -offset=-30m -maxfps 30 -maxheight 720 -maxband 400
 
