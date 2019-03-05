@@ -1,4 +1,4 @@
-# livedash
+# YTlivedash
 The aim of this project is to allow native performance using local player when playing youtube live videos without losing adaptative video playback, which is more important when streaming live content because there is less buffer available to pull from, to do all this latency improvements are approached with a combination of parallelized https requests and media streaming, DASH protocol and keep alive connections.
 
 Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5)
