@@ -1,4 +1,8 @@
-# ytlivedash
+  --offset OFFSET, -o OFFSET
+                        Time offset from where to start to play. can be
+                        negative or positive (i.e: -o 2h, -o 210m, --offset
+                        3000s or --offset=-3h, -o=-5m, -o=-300s, for hours,
+                        minutes, seconds respectively.) (default: )# ytlivedash
 The aim of this project is to have native performance when playing youtube videos without losing adaptative video playback, which similar projects lacks, for this latency is a priority, so with a combination of asynced media streaming,DASH protocol and keep alive connections this can be achieved.
 
 Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5 or pycurl
@@ -74,10 +78,11 @@ optional arguments:
   -fixed, -f            Play a fixed video quality instead of doing bandwidth
                         adaptive quality change, This is the max set from
                         options (default: False)
-  -offset OFFSET, -o OFFSET
-                        Time or segments offset from where start to play,
-                        (i.e: 2h, 210m, 3000s or 152456, for hours, minutes,
-                        seconds and nº of segment respectively.)
+  --offset OFFSET, -o OFFSET
+                        Time offset from where to start to play. can be
+                        negative or positive (i.e: -o 2h, -o 210m, --offset
+                        3000s or --offset=-3h, -o=-5m, -o=-300s, for hours,
+                        minutes, seconds respectively.) (default: )
 
 </pre>
 Examples:
@@ -98,9 +103,9 @@ are all equivalent.
 
 Extreme example:
 
-To play first 5 videos in a channel one by one with a max height of 720, max FPS of 30, using a max bandwidth of 400 kB/s, with an offset, if live, of 30 minutes and with bandwidth adaptative mode disabled:
+To play first 5 videos in a channel one by one with a max height of 720, max FPS of 30, using a max bandwidth of 400 kB/s, with an offset, of =-30 minutes and with bandwidth adaptative mode disabled:
 
-- ytdash.py "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -f -maxresults 5 -offset 30m -maxfps 30 -maxheight 720 -maxband 400
+- ytdash.py "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -f -maxresults 5 -offset=-30m -maxfps 30 -maxheight 720 -maxband 400
 
 That will discard all videos above the first limit reached and play the maximun quality left in fixed mode (the selected quality will be not switched to a lower one even if delays or bandwidth drops are detected.)
 
