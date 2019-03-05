@@ -3,7 +3,7 @@ The aim of this project is to allow native performance using local player when p
 
 Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5)
 
-Python dependencies: requests and/or pycurl (Depending which version)
+Python dependencies: requests and/or pycurl and certifi (Depending which version)
 
 Dependencies installation: 
 - Debian based:
@@ -11,7 +11,7 @@ apt-get install python3 python3-requests | python3-pycurl ffmpeg mpv
 
 Or install python dependencies with pip:
 - pip3 install requests --user or
-- PYCURL_SSL_LIBRARY=openssl pip3 install pycurl --user
+- PYCURL_SSL_LIBRARY=openssl pip3 install pycurl certifi --user
 
 Usage: 
 <pre>
