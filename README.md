@@ -1,20 +1,17 @@
-  --offset OFFSET, -o OFFSET
-                        Time offset from where to start to play. can be
-                        negative or positive (i.e: -o 2h, -o 210m, --offset
-                        3000s or --offset=-3h, -o=-5m, -o=-300s, for hours,
-                        minutes, seconds respectively.) (default: )# ytlivedash
-The aim of this project is to have native performance when playing youtube videos without losing adaptative video playback, which similar projects lacks, for this latency is a priority, so with a combination of asynced media streaming,DASH protocol and keep alive connections this can be achieved.
+#livedash
+The aim of this project is to allow native performance using local player when playing youtube live videos without losing adaptative video playback, which is important in live content for having less time to buffer the content, to do all this latency improvements are approached with a combination of parallelized https requests and media streaming, DASH protocol and keep alive connections.
 
-Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5 or pycurl
+Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5)
 
 Python dependencies: requests and/or pycurl (Depending which version)
 
-Dependencies instalation: 
+Dependencies installation: 
 - Debian based:
-apt-get install python3-requests | python3-pycurl ffmpeg mpv
+apt-get install python3 python3-requests | python3-pycurl ffmpeg mpv
 
-Pip:
-- pip3 install requests --user
+Or install python dependencies with pip:
+- pip3 install requests --user or
+- PYCURL_SSL_LIBRARY=openssl pip3 install pycurl --user
 
 Usage: 
 <pre>
