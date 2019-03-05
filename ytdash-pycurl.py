@@ -30,19 +30,17 @@ except ImportError:
 
 
 def time_type(string):
-    #  timepattern=re.compile(r"^[0-9]+[h,s,m]{0,1}$")
     if not re.match(r"^[+,-]{0,1}[0-9]+[HhMmSs]+$|^$", string):
         raise argparse.ArgumentTypeError
     return string
 
 
 def request(url=None, mode='body'):
-    # HEADERS = ['Connection: Keep-Alive', 'Keep-Alive: 300']
     rawheaders = 0
     content = 0
     headers = 0
     curlobj = pycurl.Curl()
-    curlobj.setopt(curlobj.VERBOSE, 1)
+    curlobj.setopt(curlobj.VERBOSE, 0)
     # curlobj.setopt(curlobj.HEADER, 1)
     # curlobj.setopt(curlobj.ACCEPT_ENCODING, 'gzip, deflate')
     curlobj.setopt(curlobj.CONNECTTIMEOUT, 6)
