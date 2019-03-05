@@ -30,12 +30,14 @@ except ImportError:
 
 
 def time_type(string):
+    #  timepattern=re.compile(r"^[0-9]+[h,s,m]{0,1}$")
     if not re.match(r"^[+,-]{0,1}[0-9]+[HhMmSs]+$|^$", string):
         raise argparse.ArgumentTypeError
     return string
 
 
 def request(url=None, mode='body'):
+    # HEADERS = ['Connection: Keep-Alive', 'Keep-Alive: 300']
     rawheaders = 0
     content = 0
     headers = 0
@@ -362,11 +364,11 @@ def get_media(data):
     twbytes = 0
     acceptranges = None
     headnumber = 0
-    timeouts = (3.05, 6)
+    timeouts = (3.05, 0)
     headers = 0
     status = 0
     response = 0
-    contentlength = 0
+    contentlength = totallength = 0
     end = 0
     walltimems = 0
     headtime = 0
@@ -381,9 +383,9 @@ def get_media(data):
         initbyte = 0
         maxbytes = 1048576
         #rheaders.append('Range: bytes=%s-%s' % (initbyte, initbyte + maxbytes))
-        #curlobj.setopt(pycurl.RANGE, '%s-%s' % (initbyte, initbyte + maxbytes))
-    #else:
-    maxbytes = 0
+        curlobj.setopt(pycurl.RANGE, '%s-%s' % (initbyte, initbyte + maxbytes))
+    else:
+        maxbytes = 0
     # curlobj.setopt(curlobj.WRITEDATA, content)
     while True:
         try:
@@ -393,8 +395,8 @@ def get_media(data):
                 sbyte = initbyte + int(twbytes)
                 if maxbytes:
                     ebyte = sbyte + maxbytes
-                    if ebyte > contentlength:
-                        ebyte = contentlength
+                    if totallength and ebyte > totallength:
+                        ebyte = totallength
                 else:
                     ebyte = ''
                 curlobj.setopt(pycurl.RANGE, '%s-%s' % (sbyte, ebyte))
@@ -450,13 +452,11 @@ def get_media(data):
                     logging.debug('Wallsdif > SegmSecs: %s' % walldiff)
                     logging.info('Transmission ended...')
                     end = 1
-            if not contentlength:
-                contentrange = headers.get(
-                                         'Content-Range', '').split('/')[-1]
-                if contentrange and contentrange != '*':
-                    contentlength = int(contentrange)
-                else:
-                    contentlength = int(headers.get('Content-Length', 0))
+            if not totallength:
+                totallength = headers.get('Content-Range', '').split('/')[-1]
+                if totallength and totallength != '*':
+                    totallength = int(totallength)
+            contentlength = int(headers.get('Content-Length', 0))
             acceptranges = headers.get('Accept-Ranges', 0)
             cachecontrol = headers.get('Cache-Control', 0)
             headtimems = int(headers.get('X-Head-Time-Millis', 0))
@@ -486,6 +486,7 @@ def get_media(data):
                 # logging.debug("SEGMENT LMT: %s" % (segmentlmt))
                 # logging.debug('ACCEPT-RANGES: %s' % acceptranges)
             logging.debug("CONTENT LENGTH: %s" % contentlength)
+            logging.debug("TOTAL LENGTH: %s" % totallength)
             # Check status codes:
             if status == 200 or status == 206:
                 retries503 = retries40x = 5
@@ -499,7 +500,7 @@ def get_media(data):
                     elif not livecontent:
                         baseurl = rurl[0:-1]
                     logging.debug('SAVING NEW URL: %s' % newurl)
-                if twbytes < contentlength:
+                if twbytes < totallength:
                     continue
                 elif not manifesturl:
                     end = 1
@@ -1118,7 +1119,7 @@ if __name__ == '__main__':
                                    (backcachesize * 1048576) +
                                    '--cache=%s ' % (cachesize * 256))
                 else:
-                    playerargs += ('--cache-initial=%s ' % 1 +
+                    playerargs += ('--cache-initial=%s ' % 256 +
                                    '--cache-pause-initial=yes ')
             elif args.player == 'vlc':
                 playerargs += (' --input-title-format "%s" ' % (title + " - " +
@@ -1207,22 +1208,24 @@ if __name__ == '__main__':
                     if not waiting:
                         for sid in range(numbsegms):
                             if not manifesturl:
+                                pipebuffer = 1024
                                 segsecs = 5
                                 amainurl = audiodata[aid]['url']
                                 vmainurl = videodata[vid]['url']
                                 vsegurl = asegurl = ''
                                 rpipes = (apipe, vpipe)
-                                fda = os.fdopen(apipe[1], 'wb', 0)
+                                fda = os.fdopen(apipe[1], 'wb', pipebuffer)
                                 initv = 0
                                 inita = 0
                             else:
+                                pipebuffer = 1048576
                                 if initv and inita:
                                     if live:
                                         asegurl = vsegurl = ''
                                 if not otf:
                                     apipe = os.pipe()
                                     rpipes.append([apipe[0]])
-                                    fda = os.fdopen(apipe[1], 'wb', 0)
+                                    fda = os.fdopen(apipe[1], 'wb', pipebuffer)
                                 else:
                                     rpipes.append([0])
                                 vpipe = os.pipe()
@@ -1254,7 +1257,7 @@ if __name__ == '__main__':
                             logging.debug('VSEGMENTURL: %s' % str(vsegurl))
                             # gargs = [[amainurl, asegurl, fda, inita],
                             #         [vmainurl, vsegurl, fdv, initv]]
-                            fdv = os.fdopen(vpipe[1], 'wb', 1048576)
+                            fdv = os.fdopen(vpipe[1], 'wb', pipebuffer)
                             ares = pool.submit(get_media, [amainurl, asegurl,
                                                fda, segcurlobjs[sid][0], inita])
                             vres = pool.submit(get_media, [vmainurl, vsegurl,
