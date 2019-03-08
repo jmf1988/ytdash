@@ -3,7 +3,7 @@ The aim of this project is to allow native performance using local player when p
 
 Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5)
 
-Python dependencies: requests and/or pycurl and certifi (Depending which version)
+Python dependencies: requests or pycurl and certifi (Depending which version)
 
 Dependencies installation: 
 - Debian based:
