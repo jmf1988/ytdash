@@ -6,8 +6,7 @@ try:
     import xml.etree.cElementTree as ET
 except ImportError:
     import xml.etree.ElementTree as ET
-from urllib.parse import parse_qs, urlparse
-import requests
+from urllib.parse import parse_qs, urlparse, urlencode
 import pycurl
 import curl
 import certifi
@@ -46,14 +45,14 @@ def request(url=None, mode='body'):
     curlobj.set_option(pycurl.VERBOSE, 0)
     # curlobj.set_option(pycurl.HEADER, 1)
     # curlobj.set_option(pycurl.ACCEPT_ENCODING, 'gzip, deflate')
-    curlobj.set_option(pycurl.CONNECTTIMEOUT, 5)
-    curlobj.set_option(pycurl.TIMEOUT, 0)
+    curlobj.set_option(pycurl.CONNECTTIMEOUT, 15)
+    curlobj.set_option(pycurl.TIMEOUT, 30)
     curlobj.set_option(pycurl.TRANSFER_ENCODING, 1)
     # curlobj.set_option(pycurl.RETURN_TRANSFER, True)
     curlobj.set_option(pycurl.TCP_KEEPALIVE, 1)
     curlobj.set_option(pycurl.PIPEWAIT, 1)
     # curlobj.set_option(pycurl.BUFFERSIZE, 1024)
-    curlobj.set_option(pycurl.NOSIGNAL, 0)
+    curlobj.set_option(pycurl.NOSIGNAL, 1)
     curlobj.set_option(pycurl.HEADER, 0)
     # curlobj.set_option(pycurl.KEEP_SENDING_ON_ERROR, 1)
     # curlobj.set_option(pycurl.HTTPHEADER, HEADERS)
@@ -67,9 +66,10 @@ def request(url=None, mode='body'):
         # curlobj.set_option(curlobj.WRITEDATA, content)
     # curlobj.set_option(pycurl.HEADERFUNCTION, rawheaders.write)
     if url:
-        curlobj.set_option(pycurl.URL, url)
-        curlobj.perform()
-        headers = dict_from_bytes(rawheaders)
+        curlobj.set_url(url)
+        body = curlobj.get()
+        status = curlobj.get_info(pycurl.RESPONSE_CODE)
+        headers = dict_from_bytes(body)
     return curlobj, headers
 
 
@@ -126,15 +126,15 @@ def get_quality_ids(mediadata, Bandwidths):
     return (aid, vid)
 
 
-def get_mediadata(videoid):
+def get_mediadata(curlobj, videoid):
     # https://www.youtube.com/oembed?url=[Youtubewatchurl]&format=json
     url = 'https://www.youtube.com/get_video_info?video_id=' + videoid
-    r = session.get(url).decode('iso-8859-1')
-    status = session.get_info(pycurl.RESPONSE_CODE)
+    r = curlobj.get(url).decode('iso-8859-1')
+    status = curlobj.get_info(pycurl.RESPONSE_CODE)
     if status != 200:
         logging.fatal('Http Error %s trying to get video info.' % status)
         return 1
-    ytdict = parse_qs(str(r), strict_parsing=True)
+    ytdict = parse_qs(str(r), strict_parsing=False)
     if ytdict:
         metadata = {}
         otf = False
@@ -441,7 +441,12 @@ def get_media(data):
             except pycurl.error as err:
                 logging.debug("Pycurl Exception Ocurred: %s Args: %s" %
                               (err, str(err.args)))
-                if err.args[0] != 28:
+                curlerrnum = err.args[0]
+                if curlerrnum == 18:
+                    logging.debug("Partial content, Transmision ended...")
+                    fd.close()
+                    return 1
+                if curlerrnum != 28:
                     time.sleep(segsecs)
             twbytes += int(curlobj.get_info(pycurl.SIZE_DOWNLOAD))
             # basedelay = round((time.time() - gettime), 4)
@@ -555,11 +560,13 @@ def get_media(data):
                 elif(status == 404 or status == 400 or status == 403 or
                      not retries503):
                     if retries40x:
-                        logging.debug('Refreshing metadata...')
-                        metadata = get_mediadata(videoid)
-                        if(type(metadata) is tuple and
-                           not metadata[6].get('isLive')):
-                            logging.debug("Transmission looks ended...")
+                        logging.debug('Refreshing video metadata...')
+                        metadata = get_mediadata(curlobj, videoid)
+                        if((type(metadata) is tuple and
+                           metadata[6].get('isLive')) or
+                           type(metadata) is int and metadata == 1):
+                            logging.info("Live event ended..")
+                            fd.close()
                             return 1
                         retries40x -= 1
                     else:
@@ -598,7 +605,7 @@ def closefds(totalpipes):
 
 if __name__ == '__main__':
     global ffmpegmuxer, args, livecontent, live, otf, lowlatency, manifesturl
-    global segsecs, apiurllive, videoid, minvid
+    global segsecs, apiurlchecklive, videoid, minvid
     assert ('linux' in sys.platform), "This code runs on Linux only."
     parser = argparse.ArgumentParser(prog='ytdash',
                                      description='Youtube DASH video playback.')
@@ -801,12 +808,13 @@ if __name__ == '__main__':
             apiparams = {}
             apiparams['part'] = 'snippet'
             apiparams['key'] = 'AIzaSyAWOONC01ILGs4dh8vnCJDO4trYbFTH4zQ'
+            apiurlchecklive = apibaseurl + 'videos?' + urlencode(apiparams)
             if userid:
                 apitype = 'channels'
-                apiurl = apibaseurl + apitype
                 apiparams['forUsername'] = userid
-                r = requests.get(apiurl, params=apiparams)
-                channelitems = r.json().get('items')
+                apiurl = apibaseurl + apitype + '?' + urlencode(apiparams)
+                r = session.get(apiurl)
+                channelitems = json.loads(r).get('items')
                 if channelitems:
                     channelid = channelitems[0].get('id')
                 else:
@@ -836,22 +844,26 @@ if __name__ == '__main__':
             apiparams['fields'] = ('items(id,snippet/title,snippet/' +
                                    'channelTitle,snippet/description,' +
                                    'snippet/liveBroadcastContent)')
-            apiurl = apibaseurl + apitype
+            apiurl = apibaseurl + apitype + '?' + urlencode(apiparams)
             try:
-                r = requests.get(apiurl, params=apiparams)
-                logging.debug("API URL: " + r.url)
-                if not r.ok:
-                    status = r.status_code
+                r = session.get(apiurl)
+                logging.debug("API URL: " + apiurl)
+                status = session.get_info(pycurl.RESPONSE_CODE)
+                if status != 200:
                     if status == 400:
                         reason = r.json()['error']['message']
                         logging.info('Bad API request: ' + reason)
                     else:
                         logging.info('Error code %s API request ' + status)
                     quit()
-            except requests.exceptions.ConnectionError:
-                logging.warn("Connection Error, check net connections...")
+            except pycurl.error as err:
+                err = tuple(err.args)
+                if err[0] == 6 or err[0] == 7:
+                    logging.warn("Connection Error, Internet connection down?")
+                else:
+                    logging.warn("Pycurl Error: %s" % str(err))
                 quit()
-            items = r.json().get('items')
+            items = json.loads(r).get('items')
             if items:
                 print("Videos found:")
             else:
@@ -898,7 +910,7 @@ if __name__ == '__main__':
             if not videoid:
                 videoid = item['id']['videoId']
         # Get the manifest and all its Infos
-        mediadata = get_mediadata(videoid)
+        mediadata = get_mediadata(session, videoid)
         # print(metadata)
         if mediadata == 1:
             continue
@@ -1318,20 +1330,17 @@ if __name__ == '__main__':
                     ffmuxerstarttimer = time.time()
                     if ffmpegmuxer is not None:
                         logging.debug('Waiting ffmpeg muxer...')
-                        ffmpegmuxer.wait()
-                        ''''waiting = 1
-                        while waiting:
+                        # Check if player was closed while waiting muxer:
+                        while True:
                             try:
-                                ffmpegmuxer.communicate(timeout=5)
-                                waiting = 0
+                                ffmpegmuxer.communicate(timeout=segsecs)
+                                break
                             except subprocess.TimeoutExpired:
-                                logging.info('Timed out...')
+                                logging.info('Checking player...',
+                                             end='\r', flush=True)
                                 if player.poll() is not None:
-                                    logging.info("Player Closed... ")
                                     raise Ended
-                                continue
-
-                    if not waiting:
+                    '''if not waiting:
                         ffmuxerdelay = round(
                                          time.time() - ffmuxerstarttimer, 4)
                     '''
@@ -1402,7 +1411,7 @@ if __name__ == '__main__':
                     if expiresecs is not None and expiresecs <= 20:
                         logging.debug('URL Expired %s, refreshing metadata.'
                                       % expiresecs)
-                        metadata = get_mediadata(videoid)
+                        metadata = get_mediadata(session, videoid)
                         if metadata == 1 or metadata == 2:
                             break
                         else:
@@ -1417,7 +1426,7 @@ if __name__ == '__main__':
             except (Ended):
                 for curlobjs in segcurlobjs:
                     for curlobj in curlobjs:
-                        curlobj.close()
+                        curlobj = None
                 if player.poll() is not None:
                     logging.info("Player Closed... ")
                 else:
@@ -1435,9 +1444,6 @@ if __name__ == '__main__':
                     ffmpegmuxer.kill()
                     # ffmpegmuxer.communicate()
                     ffmpegmuxer.wait()
-                for curlobjs in segcurlobjs:
-                    for curlobj in curlobjs:
-                        curlobj.close()
                 break
             # finally:
             #    closefds(rpipes)
