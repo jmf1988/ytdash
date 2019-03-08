@@ -591,8 +591,12 @@ if __name__ == '__main__':
                         help='max video bandwidth in kB/s to allow when ' +
                         ' possible (default: %(default)s)')
     parser.add_argument('-maxheight', '-mh', type=int, default=720,
+                        choices=[144, 240, 360, 480, 720, 1080, 1440, 2160,
+                                 4320],
                         help='max video heigth to allow (default: %(default)s)')
-    parser.add_argument('-maxwidth', '-mw', type=int, default=1360,
+    parser.add_argument('-maxwidth', '-mw', type=int, default=1280,
+                        choices=[256, 426, 640, 854, 1280, 1920, 2560, 3840,
+                                 7680],
                         help='max video width to allow (default: %(default)s)')
     parser.add_argument('-ffmpeg', '-ff', type=str, default='ffmpeg',
                         help='ffmpeg location route (default: %(default)s)')
