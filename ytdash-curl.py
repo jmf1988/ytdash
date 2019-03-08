@@ -1336,8 +1336,7 @@ if __name__ == '__main__':
                                 ffmpegmuxer.communicate(timeout=segsecs)
                                 break
                             except subprocess.TimeoutExpired:
-                                logging.info('Checking player...',
-                                             end='\r', flush=True)
+                                logging.info('Checking player...')
                                 if player.poll() is not None:
                                     raise Ended
                     '''if not waiting:
