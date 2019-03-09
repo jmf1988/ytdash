@@ -129,12 +129,12 @@ def get_quality_ids(mediadata, Bandwidths):
 def get_mediadata(curlobj, videoid):
     # https://www.youtube.com/oembed?url=[Youtubewatchurl]&format=json
     url = 'https://www.youtube.com/get_video_info?video_id=' + videoid
-    r = curlobj.get(url).decode('iso-8859-1')
+    videoquery = curlobj.get(url).decode('iso-8859-1')
     status = curlobj.get_info(pycurl.RESPONSE_CODE)
     if status != 200:
         logging.fatal('Http Error %s trying to get video info.' % status)
         return 1
-    ytdict = parse_qs(str(r), strict_parsing=False)
+    ytdict = parse_qs(videoquery, strict_parsing=False)
     if ytdict:
         metadata = {}
         otf = False
@@ -494,7 +494,6 @@ def get_media(data):
                 bandwidthest3 = 0
 
             status = curlobj.get_info(pycurl.RESPONSE_CODE)
-            connection = 0
             if live or postlivedvr:
                 # logging.debug('HEADERS: %s' % headers)
                 # logging.debug('REQ HEADERS: %s' % reqheaders)
@@ -531,13 +530,17 @@ def get_media(data):
                 conntime = curlobj.get_info(pycurl.CONNECT_TIME)
                 totaltime = curlobj.get_info(pycurl.TOTAL_TIME)
                 speed = curlobj.get_info(pycurl.SPEED_DOWNLOAD)
-                print('SPEED AVG: -> %s <-' % int(speed / 1024))
+                logging.debug('SPEED AVG: -> %s <-' % int(speed / 1024))
                 # print('APPCONN TIME: %s ' % (conntime, totaltime))
-                print('CONN TIME: %s - TOTAL TIME: %s' % (conntime, totaltime))
+                logging.debug('CONN TIME: %s - TOTAL TIME: %s' % (conntime,
+                                                                  totaltime))
+                print('SPEED AVG: -> %s <- TOTAL TIME: %s' % (int(speed / 1024),
+                                                              totaltime),
+                                                              end='\r')
                 info = (status, basedelay, headnumber, headtimems,
                         sequencenum, walltimems, segmentlmt, contentlength,
                         cachecontrol, bandwidthavg, bandwidthest,
-                        bandwidthest2, bandwidthest3, connection,
+                        bandwidthest2, bandwidthest3,
                         contenttype, newurl, twbytes, end)
                 logging.debug('Bytes written: %s' % twbytes)
                 return info
@@ -804,7 +807,6 @@ if __name__ == '__main__':
                 logging.info('Could not find a video or channel id' +
                              ' in the given string')
                 quit()
-        print('ARGS OFFSET: %s' % args.offset)
         if videoid:
             apitype = 'videos'
         else:
@@ -1339,8 +1341,7 @@ if __name__ == '__main__':
                                 ffmpegmuxer.communicate(timeout=segsecs)
                                 break
                             except subprocess.TimeoutExpired:
-                                logging.info('Checking player...')
-                                #             end='\r', flush=True)
+                                logging.debug('Checking player...')
                                 if player.poll() is not None:
                                     raise Ended
                     ffmuxerdelay = round(time.time() - ffmuxerstarttimer, 4)
@@ -1356,7 +1357,7 @@ if __name__ == '__main__':
                              headtimems, sequencenum, walltimems,
                              segmentlmt, contentlength, cachecontrol,
                              bandwidthavg, bandwidthest, bandwidthest2,
-                             bandwidthest3, connection, contenttype,
+                             bandwidthest3, contenttype,
                              newurl, wbytes, end) = media.result()
                             if headnumber:
                                 headnumbers.append(int(headnumber))
@@ -1372,7 +1373,6 @@ if __name__ == '__main__':
                                             videodata[vid]['url'] = newurl
                                         else:
                                             videodata[vid][0].text = newurl
-                                    vconn = connection
                                 elif contenttype == "audio/mp4":
                                     # abytes += wbytes
                                     if newurl is not None:
@@ -1380,7 +1380,6 @@ if __name__ == '__main__':
                                             audiodata[aid]['url'] = newurl
                                         else:
                                             audiodata[aid][1].text = newurl
-                                    aconn = connection
                                 if basedelay:
                                     basedelays.append(basedelay)
                                 # if sequencenum:
