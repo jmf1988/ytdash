@@ -51,7 +51,7 @@ def request(url=None, mode='body'):
     # curlobj.set_option(pycurl.RETURN_TRANSFER, True)
     curlobj.set_option(pycurl.TCP_KEEPALIVE, 1)
     curlobj.set_option(pycurl.PIPEWAIT, 1)
-    # curlobj.set_option(pycurl.BUFFERSIZE, 1024)
+    #curlobj.set_option(pycurl.BUFFERSIZE, 1024)
     curlobj.set_option(pycurl.NOSIGNAL, 1)
     curlobj.set_option(pycurl.HEADER, 0)
     # curlobj.set_option(pycurl.KEEP_SENDING_ON_ERROR, 1)
@@ -523,8 +523,7 @@ def get_media(data):
                     continue
                 elif not manifesturl:
                     end = 1
-                if(live or postlivedvr or
-                   (otf and contenttype == 'video/mp4')):
+                if not (otf and contenttype == 'audio/mp4'):
                     # os.close(pipe)
                     # fd.flush()
                     fd.close()
@@ -667,8 +666,12 @@ if __name__ == '__main__':
                         help='max video bandwidth in kB/s to allow when ' +
                         ' possible (default: %(default)s)')
     parser.add_argument('-maxheight', '-mh', type=int, default=720,
+                        choices=[144, 240, 360, 480, 720, 1080, 1440, 2160,
+                                 4320],
                         help='max video heigth to allow (default: %(default)s)')
-    parser.add_argument('-maxwidth', '-mw', type=int, default=1360,
+    parser.add_argument('-maxwidth', '-mw', type=int, default=1280,
+                        choices=[256, 426, 640, 854, 1280, 1920, 2560, 3840,
+                                 7680],
                         help='max video width to allow (default: %(default)s)')
     parser.add_argument('-ffmpeg', '-ff', type=str, default='ffmpeg',
                         help='ffmpeg location route (default: %(default)s)')
@@ -791,7 +794,8 @@ if __name__ == '__main__':
                     if not args.search:
                         logging.info('Channel URL given but search ' +
                                      'disabled, enable search mode to' +
-                                     ' play the videos found')
+                                     ' list videos found in it or use '
+                                     ' directly a video url or id instead.')
                         quit()
         elif not args.search:
             if url.path and re.match(idre, url.path):
@@ -951,7 +955,7 @@ if __name__ == '__main__':
                 logging.info('--Live mode: LOW LATENCY--')
             elif segsecs == 5:
                 logging.info('--Live mode: NORMAL LATENCY--')
-                # maxsegms = 3
+                maxsegms = 3
                 minsegms = 1
         else:
             maxsegms = 1
@@ -1241,90 +1245,89 @@ if __name__ == '__main__':
                 reqs = []
                 rpipes = []
                 numbsegms = min(max(remainsegms, minsegms), maxsegms)
-                if not waiting:
-                    for sid in range(numbsegms):
-                        if not manifesturl:
-                            pipebuffer = 1048576
-                            segsecs = 5
-                            amainurl = audiodata[aid]['url']
-                            vmainurl = videodata[vid]['url']
-                            vsegurl = asegurl = ''
-                            rpipes = (apipe, vpipe)
+                for sid in range(numbsegms):
+                    if not manifesturl:
+                        pipebuffer = 1048576
+                        segsecs = 5
+                        amainurl = audiodata[aid]['url']
+                        vmainurl = videodata[vid]['url']
+                        vsegurl = asegurl = ''
+                        rpipes = (apipe, vpipe)
+                        fda = os.fdopen(apipe[1], 'wb', pipebuffer)
+                        initv = 0
+                        inita = 0
+                    else:
+                        pipebuffer = 1048576
+                        if initv and inita:
+                            if live:
+                                asegurl = vsegurl = ''
+                        if not otf:
+                            apipe = os.pipe()
+                            rpipes.append([apipe[0]])
                             fda = os.fdopen(apipe[1], 'wb', pipebuffer)
-                            initv = 0
-                            inita = 0
                         else:
-                            pipebuffer = 1048576
-                            if initv and inita:
-                                if live:
-                                    asegurl = vsegurl = ''
-                            if not otf:
-                                apipe = os.pipe()
-                                rpipes.append([apipe[0]])
-                                fda = os.fdopen(apipe[1], 'wb', pipebuffer)
+                            rpipes.append([0])
+                        vpipe = os.pipe()
+                        rpipes[sid].append(vpipe[0])
+                        amainurl = audiodata[aid][aidu].text
+                        vmainurl = videodata[vid][0].text
+                        if postlivedvr or otf:
+                            if asegoffset:
+                                asegurl = audiodata[aid][2][-asegoffset]
+                                asegurl = asegurl.get('media')
                             else:
-                                rpipes.append([0])
-                            vpipe = os.pipe()
-                            rpipes[sid].append(vpipe[0])
-                            amainurl = audiodata[aid][aidu].text
-                            vmainurl = videodata[vid][0].text
-                            if postlivedvr or otf:
-                                if asegoffset:
-                                    asegurl = audiodata[aid][2][-asegoffset]
-                                    asegurl = asegurl.get('media')
-                                else:
-                                    aend = 1
-                                if vsegoffset:
-                                    vsegurl = videodata[vid][1][-vsegoffset]
-                                    vsegurl = vsegurl.get('media')
-                                else:
-                                    vend = 1
-                                if otf or not initv == 1 == inita:
-                                    if not vend:
-                                        vsegoffset -= 1
-                                    if not aend:
-                                        asegoffset -= 1
-                                if aend and vend:
-                                    raise Ended
-                            elif live and initv == 0 == inita:
-                                asegurl = vsegurl = "sq/%s" % seqnumber
-                                seqnumber += 1
-                        logging.debug('ASEGMENTURL: %s' % str(asegurl))
-                        logging.debug('VSEGMENTURL: %s' % str(vsegurl))
-                        # gargs = [[amainurl, asegurl, fda, inita],
-                        #         [vmainurl, vsegurl, fdv, initv]]
-                        fdv = os.fdopen(vpipe[1], 'wb', pipebuffer)
-                        '''acurlobj = segcurlobjs[sid][0][0]
-                        vcurlobj = segcurlobjs[sid][1][0]
-                        aurl = amainurl + asegurl
-                        vurl = vmainurl + vsegurl
-                        acurlobj.setopt(pycurl.URL, aurl)
-                        vcurlobj.setopt(pycurl.URL, vurl)
-                        req = (aurl, segcurlobjs[sid][0][2],
-                               segcurlobjs[sid][0][0])
-                        curlmulti.add_handle(req[2])
-                        reqs.append(req)
-                        req = (vurl, segcurlobjs[sid][1][2],
-                               segcurlobjs[sid][1][0])
-                        curlmulti.add_handle(req[2])
-                        reqs.append(req)
-                        #acurlobj.setopt(pycurl.WRITEDATA, fda)
-                        #vcurlobj.setopt(pycurl.WRITEDATA, fdv)
-                        acurlobj.setopt(pycurl.WRITEFUNCTION,
-                                        segcurlobjs[sid][0][2].write)
-                        vcurlobj.setopt(pycurl.WRITEFUNCTION,
-                                        segcurlobjs[sid][1][2].write)'''
-                        # curlmulti.add_handle(segcurlobjs[sid][1][0])
-                        ares = pool.submit(get_media, [amainurl, asegurl,
-                                           fda, segcurlobjs[sid][0],
-                                           inita])
-                        vres = pool.submit(get_media, [vmainurl, vsegurl,
-                                           fdv, segcurlobjs[sid][1],
-                                           initv])
-                        # athread = Thread(target=, args=('rout',)).start()
-                        # vthread = Thread(target=get_media,
-                        #                  args=('rout',)).start()
-                        segmsresults.append((ares, vres))
+                                aend = 1
+                            if vsegoffset:
+                                vsegurl = videodata[vid][1][-vsegoffset]
+                                vsegurl = vsegurl.get('media')
+                            else:
+                                vend = 1
+                            if otf or not initv == 1 == inita:
+                                if not vend:
+                                    vsegoffset -= 1
+                                if not aend:
+                                    asegoffset -= 1
+                            if aend and vend:
+                                raise Ended
+                        elif live and initv == 0 == inita:
+                            asegurl = vsegurl = "sq/%s" % seqnumber
+                            seqnumber += 1
+                    logging.debug('ASEGMENTURL: %s' % str(asegurl))
+                    logging.debug('VSEGMENTURL: %s' % str(vsegurl))
+                    # gargs = [[amainurl, asegurl, fda, inita],
+                    #         [vmainurl, vsegurl, fdv, initv]]
+                    fdv = os.fdopen(vpipe[1], 'wb', pipebuffer)
+                    '''acurlobj = segcurlobjs[sid][0][0]
+                    vcurlobj = segcurlobjs[sid][1][0]
+                    aurl = amainurl + asegurl
+                    vurl = vmainurl + vsegurl
+                    acurlobj.setopt(pycurl.URL, aurl)
+                    vcurlobj.setopt(pycurl.URL, vurl)
+                    req = (aurl, segcurlobjs[sid][0][2],
+                           segcurlobjs[sid][0][0])
+                    curlmulti.add_handle(req[2])
+                    reqs.append(req)
+                    req = (vurl, segcurlobjs[sid][1][2],
+                           segcurlobjs[sid][1][0])
+                    curlmulti.add_handle(req[2])
+                    reqs.append(req)
+                    #acurlobj.setopt(pycurl.WRITEDATA, fda)
+                    #vcurlobj.setopt(pycurl.WRITEDATA, fdv)
+                    acurlobj.setopt(pycurl.WRITEFUNCTION,
+                                    segcurlobjs[sid][0][2].write)
+                    vcurlobj.setopt(pycurl.WRITEFUNCTION,
+                                    segcurlobjs[sid][1][2].write)'''
+                    # curlmulti.add_handle(segcurlobjs[sid][1][0])
+                    ares = pool.submit(get_media, [amainurl, asegurl,
+                                       fda, segcurlobjs[sid][0],
+                                       inita])
+                    vres = pool.submit(get_media, [vmainurl, vsegurl,
+                                       fdv, segcurlobjs[sid][1],
+                                       initv])
+                    # athread = Thread(target=, args=('rout',)).start()
+                    # vthread = Thread(target=get_media,
+                    #                  args=('rout',)).start()
+                    segmsresults.append((ares, vres))
                 pid = 0
                 for segmresult in segmsresults:
                     ffmuxerstarttimer = time.time()
@@ -1337,12 +1340,10 @@ if __name__ == '__main__':
                                 break
                             except subprocess.TimeoutExpired:
                                 logging.info('Checking player...')
+                                #             end='\r', flush=True)
                                 if player.poll() is not None:
                                     raise Ended
-                    '''if not waiting:
-                        ffmuxerdelay = round(
-                                         time.time() - ffmuxerstarttimer, 4)
-                    '''
+                    ffmuxerdelay = round(time.time() - ffmuxerstarttimer, 4)
                     if manifesturl and not inita == initv == 1:
                         logging.debug('FFmpeg read pipes: %s, %s' %
                                       (rpipes[pid][0], rpipes[pid][1]))
@@ -1420,7 +1421,6 @@ if __name__ == '__main__':
                             buffersecs = metadata[3]
                             earliestseqnum = metadata[4]
                             startnumber = metadata[5]
-                waiting = 0
             # EXCEPTIONS: -------------------------------------------------#
             except (Ended):
                 for curlobjs in segcurlobjs:
@@ -1430,6 +1430,7 @@ if __name__ == '__main__':
                     logging.info("Player Closed... ")
                 else:
                     logging.info('Streaming completed, waiting player...')
+                    player.communicate()
                     player.wait()
                 for segmresult in segmsresults:
                     for media in segmresult:
@@ -1437,11 +1438,9 @@ if __name__ == '__main__':
                 pool.shutdown(wait=True)
                 if ffmpegbase:
                     ffmpegbase.kill()
-                    # ffmpegbase.communicate()
                     ffmpegbase.wait()
                 if ffmpegmuxer:
                     ffmpegmuxer.kill()
-                    # ffmpegmuxer.communicate()
                     ffmpegmuxer.wait()
                 break
             # finally:
@@ -1467,8 +1466,7 @@ if __name__ == '__main__':
                 truedelayavg = round(sum(truedelays) / len(truedelays), 3)
             if live:
                 ssegms = len(segmsresults)
-            delay = round((time.time() - starttime - ffmuxerdelay) / ssegms,
-                          4)
+            delay = round((time.time() - starttime - ffmuxerdelay) / ssegms, 4)
             delays.append(round(delay, 4))
             delays = delays[-arraydelayslim:]
             delayavg = round(sum(delays) / len(delays), 2)
@@ -1572,7 +1570,7 @@ if __name__ == '__main__':
                     initvurl = videodata[vid][0].text
                     initvurl += videodata[vid][1][0].get(
                                                         'sourceURL')
-                    initv = session.get(initvurl).decode('iso-8859-1')
+                    initv = session.get(initvurl)
                     logging.debug('Initurl' + initvurl)
                 log_(("DOWN", vid, remainsegms, mindelay,
                      ffmuxerdelay, delaytogoup, truedelays,
@@ -1615,7 +1613,7 @@ if __name__ == '__main__':
                             initvurl = videodata[vid][0].text
                             initvurl += videodata[vid][1][0].get(
                                                                 'sourceURL')
-                            initv = session.get(initvurl).decode('iso-8859-1')
+                            initv = session.get(initvurl)
                             logging.debug('Initurl' + initvurl)
 
                         log_(("UP", vid, remainsegms, mindelay,
