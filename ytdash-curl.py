@@ -21,6 +21,7 @@ import re
 import shlex
 import json
 import argparse
+# import chardet
 try:
     import gtk
     maxwidth = gtk.gdk.screen_width()
@@ -271,15 +272,9 @@ def get_mediadata(curlobj, videoid):
         if status != 200:
             logging.info("Error getting manifest...")
             return 1
-        if reason:
-            print(reason)
-            '''else:
-                print('Stream no longer live...')
-            '''
-            if postlivedvr and not args.offset:
-                print('Live Stream recently ended, retry with a timeoffset ' +
-                      'to play from.')
-                return 1
+        # if reason:
+        if postlivedvr and not args.offset:
+            return 1
         tree = ET.fromstring(rawmanifest)
         startnumber = int(tree[0][0].attrib.get('startNumber', 0))
         earliestseqnum = int(tree.get('{http://youtube.com/yt/2012/10/10}' +
@@ -394,11 +389,11 @@ def get_media(data):
     rawheaders = BytesIO()
     if not livecontent or not manifesturl:
         maxbytes = 524288
-        curlobj.setopt(pycurl.RANGE, '%s-%s' % (initbyte,
-                                                    initbyte + maxbytes))
+        curlobj.setopt(pycurl.RANGE, '%s-%s' % (initbyte, initbyte + maxbytes))
     else:
         maxbytes = 0
     while True:
+        columns = os.get_terminal_size().columns
         try:
             if twbytes:
                 sbyte = initbyte + int(twbytes)
@@ -484,15 +479,20 @@ def get_media(data):
             headtimems = int(headers.get('X-Head-Time-Millis', 0))
             segmentlmt = int(headers.get('X-Segment-Lmt', 0))
             contenttype = headers.get('Content-Type', 0)
-            if contenttype != 'audio/mp4':
+            if contenttype == 'video/mp4':
+                speed = curlobj.getinfo(pycurl.SPEED_DOWNLOAD)
+                totaltime = curlobj.getinfo(pycurl.TOTAL_TIME)
+
+                print(' ' * columns, end='\r')
+                ptext = ('\rDownload Speed AVG: %s kB/s' % int(speed / 1024) +
+                         ' - Download duration: %s' % totaltime)
+                print(ptext[0:columns], end='\r')
+                logging.debug('SPEED AVG: -> %s <-' % int(speed / 1024))
                 bandwidthavg = int(headers.get('X-Bandwidth-Avg', 0))
                 bandwidthest = int(headers.get('X-Bandwidth-Est', 0))
                 bandwidthest2 = int(headers.get('X-Bandwidth-Est2', 0))
                 bandwidthest3 = int(headers.get('X-Bandwidth-Est3', 0))
             else:
-                speed = curlobj.getinfo(pycurl.SPEED_DOWNLOAD)
-                print('SPEED AVG: -> %s <-' % int(speed / 1024), end='\r')
-                logging.debug('SPEED AVG: -> %s <-' % int(speed / 1024))
                 bandwidthavg = 0
                 bandwidthest = 0
                 bandwidthest2 = 0
@@ -531,11 +531,9 @@ def get_media(data):
                     rawheaders.close()
                     fd.close()
                 conntime = curlobj.getinfo(pycurl.CONNECT_TIME)
-                totaltime = curlobj.getinfo(pycurl.TOTAL_TIME)
 
                 # print('APPCONN TIME: %s ' % (conntime, totaltime))
-                logging.debug('CONN TIME: %s - TOTAL TIME: %s' % (conntime,
-                                                                  totaltime))
+                logging.debug('CONN TIME: %s ' % conntime)
 
                 info = (status, basedelay, headnumber, headtimems,
                         sequencenum, walltimems, segmentlmt, contentlength,
@@ -568,9 +566,8 @@ def get_media(data):
                         if((type(metadata) is tuple and not
                            metadata[6].get('isLive')) or
                            type(metadata) is int and metadata == 1):
-                            logging.info("Live event ended..")
                             rawheaders.close()
-
+                            logging.debug("Live event ended..")
                             fd.close()
                             return 1
                         else:
@@ -855,12 +852,12 @@ if __name__ == '__main__':
             apiurl = apibaseurl + apitype + '?' + urlencode(apiparams)
             try:
                 session.setopt(pycurl.URL, apiurl)
-                r = session.perform_rb()
+                r = session.perform_rb().decode('UTF-8')
                 logging.debug("API URL: " + apiurl)
                 status = session.getinfo(pycurl.RESPONSE_CODE)
                 if status != 200:
                     if status == 400:
-                        reason = r.json()['error']['message']
+                        reason = r['error']['message']
                         logging.info('Bad API request: ' + reason)
                     else:
                         logging.info('Error code %s API request ' + status)
@@ -872,7 +869,9 @@ if __name__ == '__main__':
                 else:
                     logging.warn("Pycurl Error: %s" % str(err))
                 quit()
-            items = json.loads(r.decode('iso-8859-1')).get('items')
+            # chardet.detect(r)['encoding']
+            # input()
+            items = json.loads(r).get('items')
             if items:
                 print("Videos found:")
             else:
@@ -882,17 +881,21 @@ if __name__ == '__main__':
             answer = None
             itemnum = 1
             for item in items:
+                columns = os.get_terminal_size().columns
                 snippet = item['snippet']
-                title = snippet['title']
+                title = snippet['title'].replace('"', "\'")[:columns - 4:]
+                # logging.debug('Title: %s' % title)
                 channeltitle = snippet["channelTitle"]
-                description = snippet['description'][:58:] + '...'
+                description = snippet['description'][:columns - 24:] + '...'
+                # description = description.replace('"', "\'").replace('\\n', "")
+                # logging.debug('Description: %s' % description)
                 livebroad = snippet['liveBroadcastContent']
                 if livebroad == 'none':
                     livebroad = False
                 else:
                     livebroad = True
                 print('%s) %s\n' % (itemnum, title) +
-                      '    * Description: %s\n' % description +
+                      '    * Description: {}\n'.format(repr(description)) +
                       '    * Channel: %s\n' % channeltitle +
                       '    * Live: %s' % livebroad)
                 itemnum += 1
@@ -922,6 +925,8 @@ if __name__ == '__main__':
         mediadata = get_mediadata(session, videoid)
         # print(metadata)
         if mediadata == 1:
+            print('Live Stream recently ended, retry with a timeoffset ' +
+                  'to play from.')
             continue
         elif mediadata == 2:
             break
@@ -1244,6 +1249,7 @@ if __name__ == '__main__':
             segcurlobjs.append((vcurlobj, acurlobj))
         while True:
             starttime = time.time()
+            columns = os.get_terminal_size().columns
             try:
                 sequencenums = []
                 logging.debug('SEQNUMBER: %s, ' % seqnumber +
@@ -1400,6 +1406,7 @@ if __name__ == '__main__':
                 if end:
                     raise Ended
                 if http_errors:
+                    print(' ' * columns, end='\r')
                     logging.info('Too many http errors, quitting.')
                     break
                 # Limit Arrays
@@ -1437,8 +1444,10 @@ if __name__ == '__main__':
                     for curlobj in curlobjs:
                         curlobj = None
                 if player.poll() is not None:
+                    print(' ' * columns, end='\r')
                     logging.info("Player Closed... ")
                 else:
+                    print(' ' * columns, end='\r')
                     logging.info('Streaming completed, waiting player...')
                     player.communicate()
                     player.wait()
@@ -1459,6 +1468,7 @@ if __name__ == '__main__':
             # Resyncing:
             if remainsegms > segmresynclimit:
                 seqnumber = headnumber - vsegoffset
+                print(' ' * columns, end='\r')
                 logging.info('Resyncing...')
             # DELAYS: -----------------------------------------------------#
             # Min latency check:
@@ -1538,11 +1548,11 @@ if __name__ == '__main__':
                 bandslastavg = round(sum(lastbands[startid:endid]) /
                                      len(lastbands[startid:endid]))
                 bandslastavg = (bandslastavg, round((bandslastavg/8)/1024))
-                print('\t' * 10, end='\r', flush=True)
-                print('Bandwidth Last Avg/Min: %skB/s' % bandslastavg[1] +
-                      ' / %skB/s ' % minbandlast[1] +
-                      ' - Delay Avg/Last %ss / %ss' %
-                      (delayavg, delays[-1]), end='\r', flush=True)
+                print(' ' * columns, end='\r')
+                ptext = ('\rBandwidth Last Avg/Min: %skB/s' % bandslastavg[1] +
+                         ' / %skB/s ' % minbandlast[1] +
+                         ' - Delay Avg/Last %ss / %ss' % (delayavg, delays[-1]))
+                print(ptext[0:columns], end='\r', flush=True)
                 bandwidthdown = 0
                 bandwidthup = 0
                 if(minbandlast[0] <= prevbandwidthb and
@@ -1571,9 +1581,9 @@ if __name__ == '__main__':
                  delays[-1] > segsecs * 1.3) or
                 (segsecs > 2 and delayavg > segsecs and
                  delays[-1] > segsecs))):
-                sys.stdout.write('\rDelays detected, switching to' +
-                                 ' lower video quality...')
-                sys.stdout.flush()
+                print(' ' * columns, end='\r')
+                print('\rDelays detected, switching to lower video quality...'
+                      [0:columns], end='\r')
                 inertia = int(max(round(delayavg / segsecs, 4), 1))
                 vid = int(max(minvid, vid - inertia))
                 if otf:
@@ -1616,14 +1626,13 @@ if __name__ == '__main__':
                          delays[-1] < delaytogoup):
                         goup = 1
                     if goup:
-                        sys.stdout.flush()
-                        sys.stdout.write('\rSwitching to' +
-                                         ' higher video quality...')
+                        print(' ' * columns, end='\r')
+                        print('\rSwitching to higher video quality...'
+                              [0:columns], end='\r')
                         vid += 1
                         if otf:
                             initvurl = videodata[vid][0].text
-                            initvurl += videodata[vid][1][0].get(
-                                                                'sourceURL')
+                            initvurl += videodata[vid][1][0].get('sourceURL')
                             session.setopt(pycurl.URL, initvurl)
                             initv = session.perform_rb()
                             logging.debug('Initurl' + initvurl)
