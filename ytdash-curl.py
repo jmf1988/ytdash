@@ -8,7 +8,6 @@ except ImportError:
     import xml.etree.ElementTree as ET
 from urllib.parse import parse_qs, urlparse, urlencode
 import pycurl
-import curl
 import certifi
 from io import BytesIO
 import logging
