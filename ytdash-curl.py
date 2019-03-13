@@ -48,11 +48,12 @@ def request(url=None, mode='body'):
     curlobj.setopt(pycurl.CONNECTTIMEOUT, 15)
     curlobj.setopt(pycurl.TIMEOUT, 30)
     curlobj.setopt(pycurl.TRANSFER_ENCODING, 1)
+    # curlobj.setopt_string(CURLOPT_TCP_FASTOPEN, "1L")
     # curlobj.setopt(pycurl.RETURN_TRANSFER, True)
     curlobj.setopt(pycurl.TCP_KEEPALIVE, 1)
     curlobj.setopt(pycurl.PIPEWAIT, 1)
     # curlobj.setopt(pycurl.BUFFERSIZE, 1024)
-    curlobj.setopt(pycurl.NOSIGNAL, 0)
+    curlobj.setopt(pycurl.NOSIGNAL, 1)
     curlobj.setopt(pycurl.HEADER, 0)
     # curlobj.setopt(pycurl.KEEP_SENDING_ON_ERROR, 1)
     # curlobj.setopt(pycurl.HTTPHEADER, HEADERS)
@@ -167,7 +168,7 @@ def get_mediadata(curlobj, videoid):
                         if realreason:
                             reason = realreason[0] + '\n' + reco
                 logging.info("Reason: %s" % reason)
-            return 1
+            return 2
     else:
         logging.info('Could not extract player response data...')
         return 1
@@ -312,7 +313,7 @@ def get_mediadata(curlobj, videoid):
             buffersecs, earliestseqnum, startnumber = 0, 0, 0
         else:
             logging.info('No dynamic video to play...')
-            return 1
+            return 2
     logging.info("VIDEO IS LIVE: %s" % live)
     logging.info("Total video Qualitys Available: %s" % len(videodata))
     # Filter video types by max height, width, fps and badnwidth:
@@ -388,6 +389,7 @@ def get_media(data):
     rawheaders = BytesIO()
     if not livecontent or not manifesturl:
         maxbytes = 524288
+        # maxbytes = 30000
         curlobj.setopt(pycurl.RANGE, '%s-%s' % (initbyte, initbyte + maxbytes))
     else:
         maxbytes = 0
@@ -764,9 +766,10 @@ if __name__ == '__main__':
             quit()
     else:
         urls = args.urls
-    for urlid in range(len(urls)):
+    # for urlid in range(len(urls)):
+    while len(urls):
         playerargs = playerbaseargs
-        url = urlparse(urls[urlid])
+        url = urlparse(urls[0])
         urlquery = url.query
         if not args.offset:
             args.offset = parse_qs(url.query).get('t', [''])[0]
@@ -844,7 +847,7 @@ if __name__ == '__main__':
             if channelid:
                 apiparams['channelId'] = channelid
             else:
-                apiparams['q'] = args.urls[urlid]
+                apiparams['q'] = args.urls[0]
             apiparams['fields'] = ('items(id,snippet/title,snippet/' +
                                    'channelTitle,snippet/description,' +
                                    'snippet/liveBroadcastContent)')
@@ -879,10 +882,12 @@ if __name__ == '__main__':
             # while True:
             answer = None
             itemnum = 1
+            videoids = []
             for item in items:
                 columns = os.get_terminal_size().columns
                 snippet = item['snippet']
                 title = snippet['title'].replace('"', "\'")[:columns - 4:]
+                videoids.append(item['id']['videoId'])
                 # logging.debug('Title: %s' % title)
                 channeltitle = snippet["channelTitle"]
                 description = snippet['description'][:columns - 24:] + '...'
@@ -899,36 +904,42 @@ if __name__ == '__main__':
                       '    * Live: %s' % livebroad)
                 itemnum += 1
             if args.search and len(items) > 1:
-                print('Enter nº of video to play or "q" to exit.')
-                #      'Enter to play from the first one.')
+                print('Enter nº of video to play, press '
+                      'Enter to play all from the first or "q" to exit.')
                 while True:
                     answer = input()
                     if(re.match(r'^[0-9]+$', answer) and
                        0 < int(answer) <= len(items)):
                         answer = int(answer)
                     if type(answer) is int:
+                        item = items[answer - 1]
                         break
                     elif answer == 'q' or answer == 'Q':
                         quit()
+                    elif answer == '':
+                        urls += videoids[1:]
+                        videoid = videoids[0]
+                        args.search = 0
+                        break
                     else:
                         print('Invalid input, only integers from 1 to' +
                               ' %s are accepted...' % len(items))
-                if answer:
-                    item = items[answer - 1]
             else:
                 item = items[0]
-            title += ' - ' + channeltitle
+            # title += ' - ' + channeltitle
             if not videoid:
                 videoid = item['id']['videoId']
         # Get the manifest and all its Infos
         mediadata = get_mediadata(session, videoid)
         # print(metadata)
-        if mediadata == 1:
-            print('Live Stream recently ended, retry with a timeoffset ' +
-                  'to play from.')
+        if type(mediadata) is int:
+            if mediadata == 1:
+                print('Live Stream recently ended, retry with a timeoffset ' +
+                      'to play from.')
+            elif mediadata == 2:
+                print('Live Stream not available.')
+            del urls[0]
             continue
-        elif mediadata == 2:
-            break
         else:
             segsecs = mediadata[0]
             audiodata = mediadata[1]
@@ -955,9 +966,9 @@ if __name__ == '__main__':
         # Check the Url and Get info from Headers:
         maxaid = len(audiodata) - 1
         maxvid = len(videodata) - 1
-        minsegms = 2
+        minsegms = 3
+        maxsegms = 3
         if live:
-            maxsegms = 2
             if segsecs == 1:
                 logging.info('--Live mode: ULTRA LOW LATENCY--')
             elif segsecs == 2:
@@ -1231,7 +1242,6 @@ if __name__ == '__main__':
         else:
             remainsegms = 1
             maxsegms = 1
-        waiting = 0
         arraydelayslim = 3
         ssegms = 1
         aend = vend = 0
@@ -1240,7 +1250,6 @@ if __name__ == '__main__':
         twbytes = 0
         http_errors = False
         pool = ThreadPoolExecutor(max_workers=2 * maxsegms)
-        '''curl = curl.Curl()'''
         segcurlobjs = []
         for sid in range(maxsegms):
             acurlobj = request()[0]
@@ -1647,8 +1656,8 @@ if __name__ == '__main__':
                     sleepsecs = max(round((segsecs) - delays[-1], 4), 0)
                     logging.debug("Sleeping %s seconds..." % sleepsecs)
                     time.sleep(sleepsecs)
-            # End While -
-
+        # End While -
+        del urls[0]
     sys.stdout.flush()
     os.closerange(3, 100)
     os.remove('/tmp/dash2.0.pid')
