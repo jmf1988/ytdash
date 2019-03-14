@@ -1,5 +1,5 @@
 # YTlivedash
-The aim of this project is to allow native performance using local player when playing youtube live videos without losing adaptative video playback, which is more important when streaming live content because there is less buffer available to pull from, to do all this latency improvements are approached with a combination of parallelized https requests and media streaming, DASH protocol and keep alive connections.
+YTlivedash is a python 3 script that allows native performance by using local player when playing youtube live videos without losing adaptative video playback, which is more important when streaming live content because there is less buffer available to pull from, to do all this latency improvements are approached with a combination of parallelized https requests, DASH protocol and keep alive connections.
 
 Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5), libcurl(>=7.43.0)
 
