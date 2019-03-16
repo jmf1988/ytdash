@@ -1261,7 +1261,7 @@ if __name__ == '__main__':
                     if not manifesturl:
                         pipebuffer = 1048576
                         segsecs = 5
-                        print("Audiodata: " + str(audiodata))
+                        # print("Audiodata: " + str(audiodata))
                         amainurl = audiodata[aid]['url']
                         vmainurl = videodata[vid]['url']
                         vsegurl = asegurl = ''
