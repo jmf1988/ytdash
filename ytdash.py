@@ -52,7 +52,8 @@ def request(url=None, mode='body'):
     # curlobj.setopt(pycurl.RETURN_TRANSFER, True)
     curlobj.setopt(pycurl.TCP_KEEPALIVE, 1)
     curlobj.setopt(pycurl.PIPEWAIT, 1)
-    # curlobj.setopt(pycurl.BUFFERSIZE, 1024)
+    #if live:
+    #    curlobj.setopt(pycurl.BUFFERSIZE, 1024)
     curlobj.setopt(pycurl.NOSIGNAL, 1)
     curlobj.setopt(pycurl.HEADER, 0)
     # curlobj.setopt(pycurl.KEEP_SENDING_ON_ERROR, 1)
@@ -449,24 +450,13 @@ def get_media(data):
                 if curlerrnum != 28:
                     time.sleep(segsecs)
             twbytes += int(curlobj.getinfo(pycurl.SIZE_DOWNLOAD))
-            # basedelay = round((time.time() - gettime), 4)
             basedelay = curlobj.getinfo(pycurl.APPCONNECT_TIME)
             # Getting metadata from headers:
             headers = dict_from_bytes(rawheaders)
-            # reqheaders = response.request.headers
             headnumber = int(headers.get('X-Head-Seqnum', 0))
             sequencenum = int(headers.get('X-Sequence-Num', 0))
-            pheadtime = headtime
             headtime = int(headers.get('X-Head-Time-Sec', 0))
-            pwalltimems = walltimems
             walltimems = int(headers.get('X-Walltime-Ms', 0))
-            if live and pwalltimems and pheadtime:
-                walldiff = (walltimems - pwalltimems) / 1000
-                headdiff = (headtime - pheadtime) / 1
-                if(walldiff > segsecs * 1.5 and headdiff == 0):
-                    logging.debug('Wallsdif > SegmSecs: %s' % walldiff)
-                    logging.info('Transmission ended...')
-                    end = 1
             if not totallength:
                 totallength = headers.get('Content-Range', '').split('/')[-1]
                 if totallength:
@@ -966,8 +956,8 @@ if __name__ == '__main__':
         # Check the Url and Get info from Headers:
         maxaid = len(audiodata) - 1
         maxvid = len(videodata) - 1
-        minsegms = 3
-        maxsegms = 3
+        minsegms = 1
+        maxsegms = 1
         if live:
             if segsecs == 1:
                 logging.info('--Live mode: ULTRA LOW LATENCY--')
@@ -1058,6 +1048,7 @@ if __name__ == '__main__':
             apipe = 0
             vid = int(len(videodata) / 1) - 1
             aidu = 1
+            aid = -1
             minvid = 2
             headnumber = 999
             seqnumber = 0
@@ -1071,7 +1062,6 @@ if __name__ == '__main__':
             bandwidthdown = 1
             bandwidthup = 1
             if otf:
-                aid = 2
                 vsegoffset = len(videodata[2][1]) - 1
                 asegoffset = len(audiodata[2][2]) - 1
                 logging.debug('ASEGOFFSET: %s' % asegoffset)
@@ -1271,6 +1261,7 @@ if __name__ == '__main__':
                     if not manifesturl:
                         pipebuffer = 1048576
                         segsecs = 5
+                        print("Audiodata: " + str(audiodata))
                         amainurl = audiodata[aid]['url']
                         vmainurl = videodata[vid]['url']
                         vsegurl = asegurl = ''
