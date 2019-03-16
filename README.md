@@ -1,3 +1,4 @@
+
 # YTlivedash
 YTlivedash is a python 3 script that allows native performance by using a local player to play youtube live DASH videos without having to loose adaptive video playback, which is more important when streaming live content because there is less buffer available to pull from, to do all this latency improvements are approached with a combination of parallelized https requests, DASH protocol and keep alive connections.
 
@@ -7,10 +8,13 @@ Python dependencies: pycurl and certifi
 
 Dependencies installation: 
 - Debian based:
-apt-get install python3 python3-pycurl python3-certifi ffmpeg mpv libcurl4 | libcurl3
+apt-get install python3 python3-pycurl python3-certifi ffmpeg mpv 
 
-To install python dependencies with pip instead:
-- PYCURL_SSL_LIBRARY=openssl pip3 install pycurl certifi --user
+Note: The above installs distro version of pycurl that cames with gnutls backend, that may use more memory and have some issues. To install pycurl with openssl backend that uses less memory and seems to have less issues do the following:
+
+- Install dependecies on debian to compile libcurl to use openssl backend (better performance):
+apt-get install python3-dev libssl-dev libcurl4-openssl-dev python3-pip
+PYCURL_SSL_LIBRARY=openssl pip3 install pycurl certifi --user
 
 Usage: 
 <pre>
