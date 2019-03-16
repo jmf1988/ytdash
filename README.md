@@ -13,8 +13,12 @@ apt-get install python3 python3-pycurl python3-certifi ffmpeg mpv
 Note: The above installs distro version of pycurl that cames with gnutls backend, that may use more memory and have some issues. To install pycurl with openssl backend that uses less memory and seems to have less issues do the following:
 
 - Install dependecies on debian to compile libcurl to use openssl backend (better performance):
+
 apt-get install python3-dev libssl-dev libcurl4-openssl-dev python3-pip
+
 PYCURL_SSL_LIBRARY=openssl pip3 install pycurl certifi --user
+
+That is it.
 
 Usage: 
 <pre>
