@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from threading import active_count as active_threads
 try:
     import xml.etree.cElementTree as ET
@@ -54,7 +54,7 @@ def request(url=None, mode='body'):
     curlobj.setopt(pycurl.PIPEWAIT, 1)
     #if live:
     #    curlobj.setopt(pycurl.BUFFERSIZE, 1024)
-    curlobj.setopt(pycurl.NOSIGNAL, 1)
+    curlobj.setopt(pycurl.NOSIGNAL, 0)
     curlobj.setopt(pycurl.HEADER, 0)
     # curlobj.setopt(pycurl.KEEP_SENDING_ON_ERROR, 1)
     # curlobj.setopt(pycurl.HTTPHEADER, HEADERS)
@@ -139,7 +139,7 @@ def get_mediadata(curlobj, videoid):
     status = curlobj.getinfo(pycurl.RESPONSE_CODE)
     if status != 200:
         logging.fatal('Http Error %s trying to get video info.' % status)
-        return 1
+        return 3
     ytdict = parse_qs(videoquery, strict_parsing=False)
     if ytdict:
         metadata = {}
@@ -151,7 +151,7 @@ def get_mediadata(curlobj, videoid):
         logging.debug('stream type: ' + str(streamtype))
     else:
         logging.info('Could not get main dictionary...')
-        return 1
+        return 3
     ytpresp = json.loads(ytdict.get('player_response', [0])[0])
     if ytpresp:
         playable = ytpresp.get('playabilityStatus')
@@ -172,7 +172,7 @@ def get_mediadata(curlobj, videoid):
             return 2
     else:
         logging.info('Could not extract player response data...')
-        return 1
+        return 3
     logging.info("Video id: %s" % videoid)
     # Player configs json:
     # ytpjs = re.findall(r'ytplayer.config = ({.*?});', r.text)
@@ -238,8 +238,8 @@ def get_mediadata(curlobj, videoid):
         logging.debug('OTF: ' + str(otf))
     else:
         manifesturl = None
-        logging.info('No data found to play media')
-        return 1
+        logging.info('No streaming data found...')
+        return 3
     if not latencyclass:
         latencyclass = videodetails.get('latencyClass')
         if latencyclass:
@@ -271,8 +271,8 @@ def get_mediadata(curlobj, videoid):
         rawmanifest = curlobj.perform_rb().decode('iso-8859-1')
         status = curlobj.getinfo(pycurl.RESPONSE_CODE)
         if status != 200:
-            logging.info("Error getting manifest...")
-            return 1
+            logging.info("Error getting manifest content...")
+            return 3
         # if reason:
         if postlivedvr and not args.offset:
             return 1
@@ -313,8 +313,8 @@ def get_mediadata(curlobj, videoid):
             segsecs = 5
             buffersecs, earliestseqnum, startnumber = 0, 0, 0
         else:
-            logging.info('No dynamic video to play...')
-            return 2
+            logging.info('No adaptive video formats found...')
+            return 3
     logging.info("VIDEO IS LIVE: %s" % live)
     logging.info("Total video Qualitys Available: %s" % len(videodata))
     # Filter video types by max height, width, fps and badnwidth:
@@ -396,184 +396,179 @@ def get_media(data):
         maxbytes = 0
     while True:
         columns = os.get_terminal_size().columns
+        if twbytes:
+            sbyte = initbyte + int(twbytes)
+            if maxbytes:
+                ebyte = sbyte + maxbytes
+                if totallength and ebyte > totallength:
+                    ebyte = totallength
+            else:
+                ebyte = ''
+            curlobj.setopt(pycurl.RANGE, '%s-%s' % (sbyte, ebyte))
+            logging.debug("Trying to resume from byte: %s to %s" % (sbyte,
+                                                                    ebyte))
+        url = baseurl + segmenturl
+        curlobj.setopt(pycurl.URL, url)
+        curlobj.setopt(curlobj.HEADERFUNCTION, rawheaders.write)
+        if init != 1:
+            # Write media content to ffmpeg or player pipes:
+            if otf and not twbytes and init:
+                iwbytes = fd.write(init)
+            curlobj.setopt(pycurl.NOBODY, 0)
+            curlobj.setopt(pycurl.HEADER, 0)
+            curlobj.setopt(pycurl.WRITEDATA, fd)
+        else:
+            curlobj.setopt(pycurl.NOBODY, 1)
+        # curlobj.setopt(CURLOPT_CONNECTTIMEOUT, timeouts[0])
+        # curlobj.setopt(pycurl.TIMEOUT, timeouts[1])
+        # curlobj.setopt(pycurl.HTTPHEADER, rheaders)
         try:
-            if twbytes:
-                sbyte = initbyte + int(twbytes)
-                if maxbytes:
-                    ebyte = sbyte + maxbytes
-                    if totallength and ebyte > totallength:
-                        ebyte = totallength
-                else:
-                    ebyte = ''
-                curlobj.setopt(pycurl.RANGE, '%s-%s' % (sbyte, ebyte))
-                logging.debug("Trying to resume from byte: %s to %s" % (sbyte,
-                                                                        ebyte))
-            gettime = time.time()
-            url = baseurl + segmenturl
-            curlobj.setopt(pycurl.URL, url)
-            curlobj.setopt(curlobj.HEADERFUNCTION, rawheaders.write)
-
-            if init != 1:
-                # Write media content to ffmpeg or player pipes:
-                if otf and not twbytes and init:
-                    iwbytes = fd.write(init)
-                curlobj.setopt(pycurl.NOBODY, 0)
-                curlobj.setopt(pycurl.HEADER, 0)
-                curlobj.setopt(pycurl.WRITEDATA, fd)
-
-            else:
-                curlobj.setopt(pycurl.NOBODY, 1)
-            # curlobj.setopt(CURLOPT_CONNECTTIMEOUT, timeouts[0])
-            # curlobj.setopt(pycurl.TIMEOUT, timeouts[1])
-            # curlobj.setopt(pycurl.HTTPHEADER, rheaders)
-            # curlobj.setopt(pycurl.NOSIGNAL, 0)
-            try:
-                logging.debug("Getting Media Content.....")
-                # curlobj.setopt(pycurl.WRITEDATA, fd.write)
-                # curlobj.setopt(pycurl.WRITEFUNCTION,
-                #                   lambda data:  onrecv(fd, data) )
-                curlobj.perform()
-                # content = curlobj.get(url)
-                if player.poll() is not None:
-                    return 1
-                logging.debug("WRITING TO PIPE: " + str(fd))
-                # fd.write(content)
-                fd.flush()
-            except pycurl.error as err:
-                logging.debug("Pycurl Exception Ocurred: %s Args: %s" %
-                              (err, str(err.args)))
-                curlerrnum = err.args[0]
-                if curlerrnum == 18:
-                    logging.debug("Partial content, Transmision ended...")
-                    fd.close()
-                    return 1
-                if curlerrnum != 28:
-                    time.sleep(segsecs)
-            twbytes += int(curlobj.getinfo(pycurl.SIZE_DOWNLOAD))
-            basedelay = curlobj.getinfo(pycurl.APPCONNECT_TIME)
-            # Getting metadata from headers:
-            headers = dict_from_bytes(rawheaders)
-            headnumber = int(headers.get('X-Head-Seqnum', 0))
-            sequencenum = int(headers.get('X-Sequence-Num', 0))
-            headtime = int(headers.get('X-Head-Time-Sec', 0))
-            walltimems = int(headers.get('X-Walltime-Ms', 0))
-            if not totallength:
-                totallength = headers.get('Content-Range', '').split('/')[-1]
-                if totallength:
-                    if totallength != '*':
-                        totallength = int(totallength)
-                    else:
-                        totallength = ''
-            contentlength = int(headers.get('Content-Length', 0))
-            acceptranges = headers.get('Accept-Ranges', 0)
-            cachecontrol = headers.get('Cache-Control', 0)
-            headtimems = int(headers.get('X-Head-Time-Millis', 0))
-            segmentlmt = int(headers.get('X-Segment-Lmt', 0))
-            contenttype = headers.get('Content-Type', 0)
-            if contenttype == 'video/mp4':
-                speed = curlobj.getinfo(pycurl.SPEED_DOWNLOAD)
-                totaltime = curlobj.getinfo(pycurl.TOTAL_TIME)
-
-                print(' ' * columns, end='\r')
-                ptext = ('\rDownload Speed AVG: %s kB/s' % int(speed / 1024) +
-                         ' - Download duration: %s' % totaltime)
-                print(ptext[0:columns], end='\r')
-                logging.debug('SPEED AVG: -> %s <-' % int(speed / 1024))
-                bandwidthavg = int(headers.get('X-Bandwidth-Avg', 0))
-                bandwidthest = int(headers.get('X-Bandwidth-Est', 0))
-                bandwidthest2 = int(headers.get('X-Bandwidth-Est2', 0))
-                bandwidthest3 = int(headers.get('X-Bandwidth-Est3', 0))
-            else:
-                bandwidthavg = 0
-                bandwidthest = 0
-                bandwidthest2 = 0
-                bandwidthest3 = 0
-
-            status = curlobj.getinfo(pycurl.RESPONSE_CODE)
-            if live or postlivedvr:
-                # logging.debug('HEADERS: %s' % headers)
-                # logging.debug('REQ HEADERS: %s' % reqheaders)
-                # logging.debug("HEADTIMES : %s s %s ms" %
-                #               (headtime, headtimems))
-                logging.debug('HEADNUMBER: %s' % headnumber)
-                logging.debug('SEQUENCENUMBER: %s' % sequencenum)
-                # logging.debug("WALLTIMEMS  : %s" % (walltimems))
-                # logging.debug("SEGMENT LMT: %s" % (segmentlmt))
-                # logging.debug('ACCEPT-RANGES: %s' % acceptranges)
-            logging.debug("CONTENT LENGTH: %s" % contentlength)
-            logging.debug("TOTAL LENGTH: %s" % totallength)
-            # Check status codes:
-            if status == 200 or status == 206:
-                retries503 = retries40x = 5
-                # redirurl = curlobj.getinfo(pycurl.REDIRECT_URL)
-                lasturl = curlobj.getinfo(pycurl.EFFECTIVE_URL)
-                if not url == lasturl:
-                    rurl = lasturl + "/"
-                    if segmenturl:
-                        baseurl = newurl = rurl.replace(segmenturl + "/", '')
-                    elif not livecontent:
-                        baseurl = rurl[0:-1]
-                    logging.debug('SAVING NEW URL: %s' % newurl)
-                if totallength and twbytes < totallength:
-                    continue
-                elif not manifesturl:
-                    end = 1
-                if not (otf and contenttype == 'audio/mp4'):
-                    rawheaders.close()
-                    fd.close()
-                conntime = curlobj.getinfo(pycurl.CONNECT_TIME)
-
-                # print('APPCONN TIME: %s ' % (conntime, totaltime))
-                logging.debug('CONN TIME: %s ' % conntime)
-
-                info = (status, basedelay, headnumber, headtimems,
-                        sequencenum, walltimems, segmentlmt, contentlength,
-                        cachecontrol, bandwidthavg, bandwidthest,
-                        bandwidthest2, bandwidthest3,
-                        contenttype, newurl, twbytes, end)
-                logging.debug('Bytes written: %s' % twbytes)
-                return info
-            else:
-                logging.debug('Status Code: %s' % status)
-                # logging.debug('REQUEST HEADERS: %s' %
-                #              response.request.headers)
-                # logging.debug('HEADERS: %s' % response.headers)
-                logging.debug("REQUEST URL: " + url)
-                if status == 204:
-                    logging.debug('Retrying in %s secs' % segsecs)
-                if status == 503:
-                    # curlobj.close()
-                    if retries503:
-                        logging.debug("Trying redirection...")
-                        gvideohost = url.split('/')[2].split('.')[0]
-                        url = url.replace(gvideohost, "redirector")
-                        # retries503 -= 1
-                elif(status == 404 or status == 400 or status == 403 or
-                     not retries503):
-                    if retries40x:
-                        logging.debug('Refreshing video metadata...')
-                        curlobj.setopt(pycurl.WRITEDATA, sys.stdout)
-                        metadata = get_mediadata(curlobj, videoid)
-                        if((type(metadata) is tuple and not
-                           metadata[6].get('isLive')) or
-                           type(metadata) is int and metadata == 1):
-                            rawheaders.close()
-                            logging.debug("Live event ended..")
-                            fd.close()
-                            return 1
-                        else:
-                            logging.debug("Live event still live..")
-                        retries40x -= 1
-                    else:
-                        rawheaders.close()
-
-                        fd.close()
-                        return 2
-                time.sleep(segsecs)
-                continue
-        except (BrokenPipeError) as oserr:
+            logging.debug("Getting Media Content.....")
+            # curlobj.setopt(pycurl.WRITEFUNCTION,
+            #                   lambda data:  onrecv(fd, data) )
+            curlobj.perform()
+            fd.flush()
+            logging.debug("WRITING TO PIPE: " + str(fd))
+            # fd.write(content)
+        except BrokenPipeError as oserr:
             logging.debug("Exception Ocurred: %s %s" % (oserr, str(oserr.args)))
-            break
+            return 1
+        except pycurl.error as err:
+            logging.debug("Pycurl Exception Ocurred: %s Args: %s" %
+                          (err, str(err.args)))
+            curlerrnum = err.args[0]
+            if curlerrnum == 18:
+                logging.debug("Partial content, Transmision ended...")
+                fd.close()
+                return 1
+            if curlerrnum == 23:
+                if player.poll() is not None:
+                    logging.debug("Write error and player closed, quitting...")
+                    return 1
+            if curlerrnum != 28:
+                time.sleep(segsecs)
+        twbytes += int(curlobj.getinfo(pycurl.SIZE_DOWNLOAD))
+        basedelay = curlobj.getinfo(pycurl.APPCONNECT_TIME)
+        # Getting metadata from headers:
+        headers = dict_from_bytes(rawheaders)
+        headnumber = int(headers.get('X-Head-Seqnum', 0))
+        sequencenum = int(headers.get('X-Sequence-Num', 0))
+        headtime = int(headers.get('X-Head-Time-Sec', 0))
+        walltimems = int(headers.get('X-Walltime-Ms', 0))
+        if not totallength:
+            totallength = headers.get('Content-Range', '').split('/')[-1]
+            if totallength:
+                if totallength != '*':
+                    totallength = int(totallength)
+                else:
+                    totallength = ''
+        contentlength = int(headers.get('Content-Length', 0))
+        acceptranges = headers.get('Accept-Ranges', 0)
+        cachecontrol = headers.get('Cache-Control', 0)
+        headtimems = int(headers.get('X-Head-Time-Millis', 0))
+        segmentlmt = int(headers.get('X-Segment-Lmt', 0))
+        contenttype = headers.get('Content-Type', 0)
+        if contenttype == 'video/mp4':
+            speed = curlobj.getinfo(pycurl.SPEED_DOWNLOAD)
+            totaltime = curlobj.getinfo(pycurl.TOTAL_TIME)
+
+            print(' ' * columns, end='\r')
+            ptext = ('\rDownload Speed AVG: %s kB/s' % int(speed / 1024) +
+                     ' - Download duration: %s' % totaltime)
+            print(ptext[0:columns], end='\r')
+            logging.debug('SPEED AVG: -> %s <-' % int(speed / 1024))
+            bandwidthavg = int(headers.get('X-Bandwidth-Avg', 0))
+            bandwidthest = int(headers.get('X-Bandwidth-Est', 0))
+            bandwidthest2 = int(headers.get('X-Bandwidth-Est2', 0))
+            bandwidthest3 = int(headers.get('X-Bandwidth-Est3', 0))
+        else:
+            bandwidthavg = 0
+            bandwidthest = 0
+            bandwidthest2 = 0
+            bandwidthest3 = 0
+        status = curlobj.getinfo(pycurl.RESPONSE_CODE)
+        if live or postlivedvr:
+            # logging.debug('HEADERS: %s' % headers)
+            # logging.debug('REQ HEADERS: %s' % reqheaders)
+            # logging.debug("HEADTIMES : %s s %s ms" %
+            #               (headtime, headtimems))
+            logging.debug('HEADNUMBER: %s' % headnumber)
+            logging.debug('SEQUENCENUMBER: %s' % sequencenum)
+            # logging.debug("WALLTIMEMS  : %s" % (walltimems))
+            # logging.debug("SEGMENT LMT: %s" % (segmentlmt))
+            # logging.debug('ACCEPT-RANGES: %s' % acceptranges)
+        logging.debug("CONTENT LENGTH: %s" % contentlength)
+        logging.debug("TOTAL LENGTH: %s" % totallength)
+        # Check status codes:
+        if status == 200 or status == 206:
+            retries503 = retries40x = 5
+            # redirurl = curlobj.getinfo(pycurl.REDIRECT_URL)
+            lasturl = curlobj.getinfo(pycurl.EFFECTIVE_URL)
+            if not url == lasturl:
+                rurl = lasturl + "/"
+                if segmenturl:
+                    baseurl = newurl = rurl.replace(segmenturl + "/", '')
+                elif not livecontent:
+                    baseurl = rurl[0:-1]
+                logging.debug('SAVING NEW URL: %s' % newurl)
+            if totallength and twbytes < totallength:
+                continue
+            elif not manifesturl:
+                end = 1
+            if not (otf and contenttype == 'audio/mp4'):
+                rawheaders.close()
+                fd.close()
+            conntime = curlobj.getinfo(pycurl.CONNECT_TIME)
+
+            # print('APPCONN TIME: %s ' % (conntime, totaltime))
+            logging.debug('CONN TIME: %s ' % conntime)
+
+            info = (status, basedelay, headnumber, headtimems,
+                    sequencenum, walltimems, segmentlmt, contentlength,
+                    cachecontrol, bandwidthavg, bandwidthest,
+                    bandwidthest2, bandwidthest3,
+                    contenttype, newurl, twbytes, end)
+            logging.debug('Bytes written: %s' % twbytes)
+            return info
+        else:
+            logging.debug('Status Code: %s' % status)
+            # logging.debug('REQUEST HEADERS: %s' %
+            #              response.request.headers)
+            # logging.debug('HEADERS: %s' % response.headers)
+            logging.debug("REQUEST URL: " + url)
+            if status == 204:
+                logging.debug('Retrying in %s secs' % segsecs)
+            if status == 503:
+                # curlobj.close()
+                if retries503:
+                    logging.debug("Trying redirection...")
+                    gvideohost = url.split('/')[2].split('.')[0]
+                    url = url.replace(gvideohost, "redirector")
+                    # retries503 -= 1
+            elif(status == 404 or status == 400 or status == 403 or
+                 not retries503):
+                if retries40x:
+                    logging.debug('Refreshing video metadata...')
+                    curlobj.setopt(pycurl.WRITEDATA, sys.stdout)
+                    metadata = get_mediadata(curlobj, videoid)
+                    if((type(metadata) is tuple and not
+                       metadata[6].get('isLive')) or
+                       type(metadata) is int and metadata == 1):
+                        rawheaders.close()
+                        logging.debug("Live event ended...")
+                        fd.close()
+                        return 1
+                    else:
+                        logging.debug("Live event still live...")
+                    retries40x -= 1
+                else:
+                    rawheaders.close()
+
+                    fd.close()
+                    return 2
+            time.sleep(segsecs)
+            continue
+
 
 
 def closefds(totalpipes):
@@ -924,10 +919,12 @@ if __name__ == '__main__':
         # print(metadata)
         if type(mediadata) is int:
             if mediadata == 1:
-                print('Live Stream recently ended, retry with a timeoffset ' +
-                      'to play from.')
+                print('Live stream recently ended, retry with a timeoffset ' +
+                      'to play it from...')
             elif mediadata == 2:
-                print('Live Stream not available.')
+                print('Video stream not available...')
+            elif mediadata == 3:
+                print('Could\'nt get all video data needed...')
             del urls[0]
             continue
         else:
@@ -965,7 +962,7 @@ if __name__ == '__main__':
                 logging.info('--Live mode: LOW LATENCY--')
             elif segsecs == 5:
                 logging.info('--Live mode: NORMAL LATENCY--')
-                maxsegms = 3
+                maxsegms = 1
                 minsegms = 1
         else:
             maxsegms = 1
@@ -1259,7 +1256,7 @@ if __name__ == '__main__':
                 numbsegms = min(max(remainsegms, minsegms), maxsegms)
                 for sid in range(numbsegms):
                     if not manifesturl:
-                        pipebuffer = 1048576
+                        pipebuffer = 10485
                         segsecs = 5
                         # print("Audiodata: " + str(audiodata))
                         amainurl = audiodata[aid]['url']
@@ -1362,14 +1359,27 @@ if __name__ == '__main__':
                         ffmpegmuxer = ffmuxer(args.ffmpeg, ffmuxerstdout,
                                               rpipes[pid][0],
                                               rpipes[pid][1])
-                    for media in segmresult:
-                        if type(media.result()) is tuple:
+                    for mediares in segmresult:
+                        while True:
+                            try:
+                                result = mediares.result(timeout=segsecs)
+                            except TimeoutError:
+                                logging.debug('Checking player...')
+                                if player.poll() is not None:
+                                    mediares.cancel()
+                                    if playerfds:
+                                        os.close(playerfds[0])
+                                        os.close(playerfds[1])
+                                    raise Ended
+                            else:
+                                break
+                        if type(result) is tuple:
                             (status, basedelay, headnumber,
                              headtimems, sequencenum, walltimems,
                              segmentlmt, contentlength, cachecontrol,
                              bandwidthavg, bandwidthest, bandwidthest2,
                              bandwidthest3, contenttype,
-                             newurl, wbytes, end) = media.result()
+                             newurl, wbytes, end) = result
                             if headnumber:
                                 headnumbers.append(int(headnumber))
                             if headtimems:
@@ -1395,9 +1405,9 @@ if __name__ == '__main__':
                                     basedelays.append(basedelay)
                                 # if sequencenum:
                                 #    sequencenums.append(sequencenum)
-                        elif media.result() == 1:
+                        elif result == 1:
                             end = True
-                        elif media.result() == 2:
+                        elif result == 2:
                             http_errors = True
                     if (otf or not inita == initv == 1) and manifesturl:
                         closefds(rpipes[pid])
