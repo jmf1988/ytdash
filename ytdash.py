@@ -54,7 +54,7 @@ def request(url=None, mode='body'):
     curlobj.setopt(pycurl.PIPEWAIT, 1)
     #if live:
     #    curlobj.setopt(pycurl.BUFFERSIZE, 1024)
-    curlobj.setopt(pycurl.NOSIGNAL, 0)
+    curlobj.setopt(pycurl.NOSIGNAL, 1)
     curlobj.setopt(pycurl.HEADER, 0)
     # curlobj.setopt(pycurl.KEEP_SENDING_ON_ERROR, 1)
     # curlobj.setopt(pycurl.HTTPHEADER, HEADERS)
@@ -426,13 +426,15 @@ def get_media(data):
             logging.debug("Getting Media Content.....")
             # curlobj.setopt(pycurl.WRITEFUNCTION,
             #                   lambda data:  onrecv(fd, data) )
+            if player.poll() is not None:
+                return 1
             curlobj.perform()
             fd.flush()
             logging.debug("WRITING TO PIPE: " + str(fd))
             # fd.write(content)
-        except BrokenPipeError as oserr:
-            logging.debug("Exception Ocurred: %s %s" % (oserr, str(oserr.args)))
-            return 1
+        # except BrokenPipeError as oserr:
+        #    logging.debug("Exception Ocurred: %s %s" % (oserr, str(oserr.args)))
+        #     return 1
         except pycurl.error as err:
             logging.debug("Pycurl Exception Ocurred: %s Args: %s" %
                           (err, str(err.args)))
@@ -442,9 +444,8 @@ def get_media(data):
                 fd.close()
                 return 1
             if curlerrnum == 23:
-                if player.poll() is not None:
-                    logging.debug("Write error and player closed, quitting...")
-                    return 1
+                logging.debug("Write error and player closed, quitting...")
+                return 1
             if curlerrnum != 28:
                 time.sleep(segsecs)
         twbytes += int(curlobj.getinfo(pycurl.SIZE_DOWNLOAD))
@@ -1256,7 +1257,7 @@ if __name__ == '__main__':
                 numbsegms = min(max(remainsegms, minsegms), maxsegms)
                 for sid in range(numbsegms):
                     if not manifesturl:
-                        pipebuffer = 10485
+                        pipebuffer = 1024
                         segsecs = 5
                         # print("Audiodata: " + str(audiodata))
                         amainurl = audiodata[aid]['url']
@@ -1267,7 +1268,7 @@ if __name__ == '__main__':
                         initv = 0
                         inita = 0
                     else:
-                        pipebuffer = 1048576
+                        pipebuffer = 1024
                         if initv and inita:
                             if live:
                                 asegurl = vsegurl = ''
@@ -1364,13 +1365,16 @@ if __name__ == '__main__':
                             try:
                                 result = mediares.result(timeout=segsecs)
                             except TimeoutError:
-                                logging.debug('Checking player...')
+                                logging.debug('Checking player fut...')
                                 if player.poll() is not None:
                                     mediares.cancel()
                                     if playerfds:
+                                        os.read(playerfds[0], 1048576)
+                                        os.read(playerfds[1], 1048576)
                                         os.close(playerfds[0])
                                         os.close(playerfds[1])
-                                    raise Ended
+                                    result = 1
+                                    break
                             else:
                                 break
                         if type(result) is tuple:
@@ -1448,7 +1452,7 @@ if __name__ == '__main__':
                             earliestseqnum = metadata[4]
                             startnumber = metadata[5]
             # EXCEPTIONS: -------------------------------------------------#
-            except (Ended):
+            except Ended:
                 for curlobjs in segcurlobjs:
                     for curlobj in curlobjs:
                         curlobj = None
