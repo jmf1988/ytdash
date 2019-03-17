@@ -432,9 +432,9 @@ def get_media(data):
             fd.flush()
             logging.debug("WRITING TO PIPE: " + str(fd))
             # fd.write(content)
-        # except BrokenPipeError as oserr:
-        #    logging.debug("Exception Ocurred: %s %s" % (oserr, str(oserr.args)))
-        #     return 1
+        except BrokenPipeError as oserr:
+            logging.debug("Exception Ocurred: %s %s" % (oserr, str(oserr.args)))
+            return 1
         except pycurl.error as err:
             logging.debug("Pycurl Exception Ocurred: %s Args: %s" %
                           (err, str(err.args)))
@@ -954,8 +954,8 @@ if __name__ == '__main__':
         # Check the Url and Get info from Headers:
         maxaid = len(audiodata) - 1
         maxvid = len(videodata) - 1
-        minsegms = 1
-        maxsegms = 1
+        minsegms = 2
+        maxsegms = 2
         if live:
             if segsecs == 1:
                 logging.info('--Live mode: ULTRA LOW LATENCY--')
@@ -963,7 +963,7 @@ if __name__ == '__main__':
                 logging.info('--Live mode: LOW LATENCY--')
             elif segsecs == 5:
                 logging.info('--Live mode: NORMAL LATENCY--')
-                maxsegms = 1
+                maxsegms = 3
                 minsegms = 1
         else:
             maxsegms = 1
@@ -1257,7 +1257,7 @@ if __name__ == '__main__':
                 numbsegms = min(max(remainsegms, minsegms), maxsegms)
                 for sid in range(numbsegms):
                     if not manifesturl:
-                        pipebuffer = 1024
+                        pipebuffer = 1048576
                         segsecs = 5
                         # print("Audiodata: " + str(audiodata))
                         amainurl = audiodata[aid]['url']
@@ -1369,8 +1369,8 @@ if __name__ == '__main__':
                                 if player.poll() is not None:
                                     mediares.cancel()
                                     if playerfds:
-                                        os.read(playerfds[0], 1048576)
-                                        os.read(playerfds[1], 1048576)
+                                        # os.read(playerfds[0], 1048576)
+                                        # os.read(playerfds[1], 1048576)
                                         os.close(playerfds[0])
                                         os.close(playerfds[1])
                                     result = 1
@@ -1590,8 +1590,8 @@ if __name__ == '__main__':
             # CHECK TO GO DOWN: -------------------------------------------#
             if(not args.fixed and vid > minvid and ffmuxerdelay < 1 and
                bandwidthdown and delays[-1] <= segsecs * len(videodata) and
-               ((segsecs <= 2 and delayavg > segsecs * 1.3 and
-                 delays[-1] > segsecs * 1.3) or
+               ((segsecs <= 2 and delayavg > segsecs * 1.2 and
+                 delays[-1] > segsecs * 1.2) or
                 (segsecs > 2 and delayavg > segsecs and
                  delays[-1] > segsecs))):
                 print(' ' * columns, end='\r')
