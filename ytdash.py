@@ -7,9 +7,9 @@ try:
 except ImportError:
     import xml.etree.ElementTree as ET
 from urllib.parse import parse_qs, urlparse, urlencode
+from io import BytesIO
 import pycurl
 import certifi
-from io import BytesIO
 import logging
 import os
 import signal
@@ -22,10 +22,14 @@ import json
 import argparse
 # import chardet
 try:
-    import gtk
-    maxwidth = gtk.gdk.screen_width()
-    maxheight = gtk.gdk.screen_height()
+    import gi
+    gi.require_version('Gdk', '3.0')
+    from gi.repository import Gdk
+    w = Gdk.get_default_root_window()
+    maxwidth, maxheight = w.get_geometry()[2:4]
+    del gi
 except ImportError:
+    maxwidth, maxheight = 1360, 768
     pass
 
 
@@ -107,6 +111,7 @@ def log_(infos):
                  MIN BANDWIDTH AVGS: %s
                  MIN BANDWIDTH LASTS: %s
                  BANDWIDTH LASTS AVG: %s
+                 SPEED: %s
                  NEW VIDEO URL: %s''' % infos)
 
 
@@ -334,6 +339,10 @@ def get_mediadata(curlobj, videoid):
             del videodata[idx]
         else:
             idx += 1
+    if len(videodata) <= 1:
+        logging.info('No video found with the requested properties, ' +
+                     'retry with higher values...')
+        return 3
     logging.info("Total video Qualitys Choosen: %s" % len(videodata))
     return (segsecs, audiodata, videodata, buffersecs, earliestseqnum,
             startnumber, metadata)
@@ -385,6 +394,7 @@ def get_media(data):
     headtime = 0
     newurl = None
     rheaders = []
+    speed = 0
     initbyte = 0
     playerclosed = 0
     rawheaders = BytesIO()
@@ -469,15 +479,15 @@ def get_media(data):
         headtimems = int(headers.get('X-Head-Time-Millis', 0))
         segmentlmt = int(headers.get('X-Segment-Lmt', 0))
         contenttype = headers.get('Content-Type', 0)
-        if contenttype == 'video/mp4':
-            speed = curlobj.getinfo(pycurl.SPEED_DOWNLOAD)
-            totaltime = curlobj.getinfo(pycurl.TOTAL_TIME)
+        speed = curlobj.getinfo(pycurl.SPEED_DOWNLOAD)
+        totaltime = curlobj.getinfo(pycurl.TOTAL_TIME)
+        print(' ' * columns, end='\r')
+        ptext = ('\rDownload Speed AVG: %s kB/s' % int(speed / 1024) +
+                 ' - Download duration: %s' % totaltime)
+        print(ptext[0:columns], end='\r')
+        logging.debug('SPEED AVG: -> %s <-' % int(speed / 1024))
 
-            print(' ' * columns, end='\r')
-            ptext = ('\rDownload Speed AVG: %s kB/s' % int(speed / 1024) +
-                     ' - Download duration: %s' % totaltime)
-            print(ptext[0:columns], end='\r')
-            logging.debug('SPEED AVG: -> %s <-' % int(speed / 1024))
+        if contenttype == 'video/mp4':
             bandwidthavg = int(headers.get('X-Bandwidth-Avg', 0))
             bandwidthest = int(headers.get('X-Bandwidth-Est', 0))
             bandwidthest2 = int(headers.get('X-Bandwidth-Est2', 0))
@@ -527,7 +537,7 @@ def get_media(data):
             info = (status, basedelay, headnumber, headtimems,
                     sequencenum, walltimems, segmentlmt, contentlength,
                     cachecontrol, bandwidthavg, bandwidthest,
-                    bandwidthest2, bandwidthest3,
+                    bandwidthest2, bandwidthest3, speed,
                     contenttype, newurl, twbytes, end)
             logging.debug('Bytes written: %s' % twbytes)
             return info
@@ -660,11 +670,11 @@ if __name__ == '__main__':
     parser.add_argument('-maxband', '-mb', type=int, default=700,
                         help='max video bandwidth in kB/s to allow when ' +
                         ' possible (default: %(default)s)')
-    parser.add_argument('-maxheight', '-mh', type=int, default=720,
+    parser.add_argument('-maxheight', '-mh', type=int, default=maxheight,
                         choices=[144, 240, 360, 480, 720, 1080, 1440, 2160,
                                  4320],
                         help='max video heigth to allow (default: %(default)s)')
-    parser.add_argument('-maxwidth', '-mw', type=int, default=1280,
+    parser.add_argument('-maxwidth', '-mw', type=int, default=maxwidth,
                         choices=[256, 426, 640, 854, 1280, 1920, 2560, 3840,
                                  7680],
                         help='max video width to allow (default: %(default)s)')
@@ -698,7 +708,7 @@ if __name__ == '__main__':
     console.setLevel(loglevel)
     # add the handler to the root logger
     logging.getLogger('').addHandler(console)
-
+    logging.debug('Resolution detected: %s x %s' % (maxwidth, maxheight))
     if os.path.isfile('/tmp/dash2.0.pid'):
         with open('/tmp/dash2.0.pid', 'r') as fd:
             prevpid = fd.read()
@@ -730,8 +740,8 @@ if __name__ == '__main__':
     autoresync = 1  # Drop segments on high delays to keep live
     # CURL Session:
     session = pycurl.Curl()
-    # session.setopt(pycurl.NOSIGNAL, 1)
     # session.headers['User-Agent'] += ' ytdash/0.1 (gzip)'
+    session.setopt(pycurl.HTTPHEADER, ['User-Agent: ytdash/0.1 (gzip)'])
     session.setopt(pycurl.ACCEPT_ENCODING, 'gzip, deflate')
     vsegoffset = 3
     init = None
@@ -891,7 +901,7 @@ if __name__ == '__main__':
                 itemnum += 1
             if args.search and len(items) > 1:
                 print('Enter nº of video to play, press '
-                      'Enter to play all from the first or "q" to exit.')
+                      'Enter to play from the first or "q" to exit.')
                 while True:
                     answer = input()
                     if(re.match(r'^[0-9]+$', answer) and
@@ -925,7 +935,7 @@ if __name__ == '__main__':
             elif mediadata == 2:
                 print('Video stream not available...')
             elif mediadata == 3:
-                print('Could\'nt get all video data needed...')
+                print('Could\'t get all video data needed...')
             del urls[0]
             continue
         else:
@@ -1212,6 +1222,7 @@ if __name__ == '__main__':
         basedelays = []
         headtimes = []
         walltimemss = []
+        speeds = []
         firstrun = 1
         avgsecs = 20
         arrayheaderslim = int(avgsecs / segsecs) * 2
@@ -1382,7 +1393,7 @@ if __name__ == '__main__':
                              headtimems, sequencenum, walltimems,
                              segmentlmt, contentlength, cachecontrol,
                              bandwidthavg, bandwidthest, bandwidthest2,
-                             bandwidthest3, contenttype,
+                             bandwidthest3, speed, contenttype,
                              newurl, wbytes, end) = result
                             if headnumber:
                                 headnumbers.append(int(headnumber))
@@ -1407,6 +1418,7 @@ if __name__ == '__main__':
                                             audiodata[aid][1].text = newurl
                                 if basedelay:
                                     basedelays.append(basedelay)
+                                speeds.append(speed)
                                 # if sequencenum:
                                 #    sequencenums.append(sequencenum)
                         elif result == 1:
@@ -1516,6 +1528,8 @@ if __name__ == '__main__':
             # -------------------------------------------------------------#
 
             # BANDWIDTHS: -------------------------------------------------#
+            speeds = speeds[-arraydelayslim:]
+            speed = max(speeds)
             if not args.fixed and (live or postlivedvr):
                 if bandwidthavg:
                     Bandwidths[0].append(round(bandwidthavg * 8, 1))
@@ -1574,6 +1588,7 @@ if __name__ == '__main__':
                 else:
                     sensup = 1
                     if(minbandavg[0] > nextbandwidth[0] * sensup and
+                       ((speed * 8) + minbandavg[0]) / 2 > nextbandwidth[0] * sensup and
                        minbandlast[0] > nextbandwidth[0] * sensup):
                         bandwidthup = 1
                     logging.debug("Bandwidth UP: %s" % bandwidthup)
@@ -1611,7 +1626,7 @@ if __name__ == '__main__':
                      truedelayavg, basedelays, basedelayavg, delays,
                      delayavg, selectedbandwidth[1],
                      nextbandwidth[1], minbandavg[1],
-                     minbandlast[1], bandslastavg[1],
+                     minbandlast[1], bandslastavg[1], speed,
                      videodata[vid][0].text))
             if remainsegms <= 0 or remainsegms > 10:
                 elapsed3 = round(time.time() - starttime, 4)
@@ -1655,7 +1670,7 @@ if __name__ == '__main__':
                              truedelayavg, basedelays, basedelayavg, delays,
                              delayavg, selectedbandwidth[1],
                              nextbandwidth[1], minbandavg[1],
-                             minbandlast[1], bandslastavg[1],
+                             minbandlast[1], bandslastavg[1], speed,
                              videodata[vid][0].text))
                 if not lowlatency and live:
                     sleepsecs = max(round((segsecs) - delays[-1], 4), 0)
