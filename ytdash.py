@@ -379,7 +379,7 @@ def ffmuxer(ffmpegbin, ffmuxerstdout, apipe, vpipe):
 def get_media(data):
     baseurl, segmenturl, fd, curlobj, init = data
     retries503 = 5
-    retries40x = 2
+    retries40x = 5
     conerr = 0
     twbytes = 0
     acceptranges = None
@@ -556,8 +556,7 @@ def get_media(data):
                     gvideohost = url.split('/')[2].split('.')[0]
                     url = url.replace(gvideohost, "redirector")
                     # retries503 -= 1
-            elif(status == 404 or status == 400 or status == 403 or
-                 not retries503):
+            elif status == 404 or status == 400 or status == 403:
                 if retries40x:
                     logging.debug('Refreshing video metadata...')
                     curlobj.setopt(pycurl.WRITEDATA, sys.stdout)
@@ -574,7 +573,6 @@ def get_media(data):
                     retries40x -= 1
                 else:
                     rawheaders.close()
-
                     fd.close()
                     return 2
             time.sleep(segsecs)
@@ -1428,12 +1426,11 @@ if __name__ == '__main__':
                     if (otf or not inita == initv == 1) and manifesturl:
                         closefds(rpipes[pid])
                         pid += 1
-                if end:
-                    raise Ended
                 if http_errors:
                     print(' ' * columns, end='\r')
                     logging.info('Too many http errors, quitting.')
-                    break
+                if end or http_errors:
+                    raise Ended
                 # Limit Arrays
                 headtimes = headtimes[-arrayheaderslim:]
                 walltimemss = walltimemss[-arrayheaderslim:]
