@@ -678,6 +678,9 @@ if __name__ == '__main__':
                         help='max video width to allow (default: %(default)s)')
     parser.add_argument('-ffmpeg', '-ff', type=str, default='ffmpeg',
                         help='ffmpeg location route (default: %(default)s)')
+    parser.add_argument('-autoplay', action='store_true',
+                        help='Autoplay all results returned by search mode ' +
+                        '(default: %(default)s)')
     parser.add_argument('-fixed', '-f', action='store_true',
                         help='Play a fixed video quality instead of doing' +
                         ' bandwidth adaptive quality change, This is the max' +
@@ -901,7 +904,10 @@ if __name__ == '__main__':
                 print('Enter nº of video to play, press '
                       'Enter to play from the first or "q" to exit.')
                 while True:
-                    answer = input()
+                    if not args.autoplay:
+                        answer = input()
+                    else:
+                        answer = ''
                     if(re.match(r'^[0-9]+$', answer) and
                        0 < int(answer) <= len(items)):
                         answer = int(answer)
@@ -923,6 +929,8 @@ if __name__ == '__main__':
             # title += ' - ' + channeltitle
             if not videoid:
                 videoid = item['id']['videoId']
+        # logging.info('Item selected: ' + )
+        logging.info('Fetching data for video id: %s' % videoid)
         # Get the manifest and all its Infos
         mediadata = get_mediadata(session, videoid)
         # print(metadata)
@@ -1476,6 +1484,7 @@ if __name__ == '__main__':
                 for segmresult in segmsresults:
                     for media in segmresult:
                         media.cancel()
+                        c = media.result()
                 pool.shutdown(wait=True)
                 if ffmpegbase:
                     ffmpegbase.kill()
