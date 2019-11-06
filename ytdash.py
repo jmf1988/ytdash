@@ -1108,9 +1108,9 @@ if __name__ == '__main__':
 
         # While End ---
         if manifesturl:
-            analyzedur = int(segsecs * 1000000 * 2)
+            analyzedur = int(segsecs * 1000000 * 3)
             ffbaseargs = args.ffmpeg + ' -v %s ' % ffloglevel
-            ffbaseinputs = ' -thread_queue_size 150000 -flags +low_delay '
+            ffbaseinputs = ' -thread_queue_size 500 -flags +low_delay '
             ffbaseargs += ' -analyzeduration ' + str(analyzedur)
             if otf:
                 apipe = os.pipe()
@@ -1242,7 +1242,7 @@ if __name__ == '__main__':
         bandwidthavg = 0
         cachecontrol = 0
         if live or postlivedvr:
-            remainsegms = 1
+            remainsegms = 3
             # maxsegms = 3
         else:
             remainsegms = 1
@@ -1481,11 +1481,7 @@ if __name__ == '__main__':
                     logging.info('Streaming completed, waiting player...')
                     player.communicate()
                     player.wait()
-                for segmresult in segmsresults:
-                    for media in segmresult:
-                        media.cancel()
-                        c = media.result()
-                pool.shutdown(wait=True)
+                pool.shutdown(wait=False)
                 if ffmpegbase:
                     ffmpegbase.kill()
                     ffmpegbase.wait()
