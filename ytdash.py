@@ -1675,9 +1675,16 @@ if __name__ == '__main__':
                              minbandlast[1], bandslastavg[1], speed,
                              videodata[vid][0].text))
                 if not lowlatency and live:
-                    sleepsecs = max(round((segsecs) - delays[-1], 4), 0)
+                    sleepsecs = max(round((segsecs) - delays[-1] + 0.0005, 4), 0)
                     logging.debug("Sleeping %s seconds..." % sleepsecs)
-                    time.sleep(sleepsecs)
+                    while sleepsecs > 0:
+                        if player.poll() is not None:
+                            break
+                        partialsecs = min(1,max(round(sleepsecs, 4),0))
+                        sleepsecs -= 1
+                        if partialsecs:
+                            logging.debug("Waiting %s sec..." % partialsecs )
+                            time.sleep(partialsecs)
         # End While -
         del urls[0]
     sys.stdout.flush()
