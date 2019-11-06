@@ -1364,7 +1364,7 @@ if __name__ == '__main__':
                         # Check if player was closed while waiting muxer:
                         while True:
                             try:
-                                ffmpegmuxer.communicate(timeout=segsecs)
+                                ffmpegmuxer.communicate(timeout=1)
                                 break
                             except subprocess.TimeoutExpired:
                                 logging.debug('Checking player...')
