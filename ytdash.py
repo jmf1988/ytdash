@@ -308,7 +308,7 @@ def get_mediadata(curlobj, videoid):
         # Sort by bandwidth needed:
         for mtype in audiodata, videodata:
             mtype.sort(key=lambda mid: int(mid.attrib.get('bandwidth', 0)))
-        fps_string = 'FrameRate'
+        fps_string = 'frameRate'
     else:
         logging.info('Dash Manifest URL not available...')
         if adaptivefmts:
