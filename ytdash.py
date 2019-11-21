@@ -724,10 +724,8 @@ if __name__ == '__main__':
         fd.write(str(os.getpgrp()))
 
     if args.player == 'mpv':
-        # max RAM cached media size downloaded after pause in Mb:
-        cachesize = 7
-        backcachesize = 5  # max back RAM cached media played/skipped to keep,Mb
-        totalcachesize = backcachesize + cachesize
+        cachesecs = 60  # max precached content in seconds
+        backcachesize = 20  # max back RAM cached media played/skipped to keep,Mb
         playerbaseargs = (' --input-terminal=no ')
         #              ' --rebase-start-time=yes'
         #              '--profile=low-latency'
@@ -1176,14 +1174,9 @@ if __name__ == '__main__':
                     offsetsecs *= 3600
                 playerargs += ' --start=%s ' % offsetsecs
             if manifesturl:
-                playerargs += ('--demuxer-lavf-analyzeduration=%s ' %
-                               int(segsecs * 3) +
-                               '--cache-backbuffer=%s ' %
-                               (backcachesize * 1024) +
-                               '--force-seekable=no ' +
+                playerargs += ('--cache-secs=%s ' % cachesecs +
                                '--demuxer-max-back-bytes=%s ' %
-                               (backcachesize * 1048576) +
-                               '--cache=%s ' % (cachesize * 256))
+                               (backcachesize * 1048576) )s
             '''else:
                 playerargs += ('--cache-initial=%s ' % 0 +
                                '--cache-pause-initial=no ')'''
