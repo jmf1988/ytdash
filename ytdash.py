@@ -726,7 +726,8 @@ if __name__ == '__main__':
     if args.player == 'mpv':
         cachesecs = 60  # max precached content in seconds
         backcachesize = 20  # max back RAM cached media played/skipped to keep,Mb
-        playerbaseargs = (' --input-terminal=no ')
+        playerbaseargs = (' --input-terminal=no ' +
+                          '--af lavfi="[alimiter=limit=0.1:level=enabled]"' )
         #              ' --rebase-start-time=yes'
         #              '--profile=low-latency'
         if not args.debug:
