@@ -1177,10 +1177,9 @@ if __name__ == '__main__':
             if manifesturl:
                 playerargs += ('--cache-secs=%s ' % cachesecs +
                                '--demuxer-max-back-bytes=%s ' %
-                               (backcachesize * 1048576) )s
-            '''else:
-                playerargs += ('--cache-initial=%s ' % 0 +
-                               '--cache-pause-initial=no ')'''
+                               (backcachesize * 1048576) +
+                               '--demuxer-max-bytes=%s ' %
+                               (backcachesize * 1048576) )
         elif args.player == 'vlc':
             playerargs += (' --input-title-format "%s" ' % (title + " - " +
                                                             author) +
