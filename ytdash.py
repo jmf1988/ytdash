@@ -51,7 +51,7 @@ def request(url=None, mode='body'):
     # curlobj.setopt(pycurl.ACCEPT_ENCODING, 'gzip, deflate')
     curlobj.setopt(pycurl.CONNECTTIMEOUT, 15)
     curlobj.setopt(pycurl.TIMEOUT, 30)
-    curlobj.setopt(pycurl.TRANSFER_ENCODING, 1)
+    # curlobj.setopt(pycurl.TRANSFER_ENCODING, 1)
     # curlobj.setopt_string(CURLOPT_TCP_FASTOPEN, "1L")
     # curlobj.setopt(pycurl.RETURN_TRANSFER, True)
     curlobj.setopt(pycurl.TCP_KEEPALIVE, 1)
@@ -273,6 +273,7 @@ def get_mediadata(curlobj, videoid):
         manifesturl += '/keepalive/yes'
         logging.debug("Manifest URL: %s" % manifesturl)
         curlobj.setopt(pycurl.URL, manifesturl)
+        curlobj.setopt(pycurl.ACCEPT_ENCODING, 'gzip, deflate')
         rawmanifest = curlobj.perform_rb().decode('iso-8859-1')
         status = curlobj.getinfo(pycurl.RESPONSE_CODE)
         if status != 200:
@@ -1408,7 +1409,7 @@ if __name__ == '__main__':
                             try:
                                 result = mediares.result(timeout=segsecs)
                             except TimeoutError:
-                                logging.debug('Checking player fut...')
+                                logging.debug('Waiting download to complete...')
                                 if player.poll() is not None:
                                     mediares.cancel()
                                     if playerfds:
