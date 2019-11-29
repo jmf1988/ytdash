@@ -57,7 +57,7 @@ def request(url=None, mode='body'):
     curlobj.setopt(pycurl.TCP_KEEPALIVE, 1)
     curlobj.setopt(pycurl.PIPEWAIT, 1)
     #if live:
-    #    curlobj.setopt(pycurl.BUFFERSIZE, 1024)
+    curlobj.setopt(pycurl.BUFFERSIZE, 524288)
     curlobj.setopt(pycurl.NOSIGNAL, 1)
     curlobj.setopt(pycurl.HEADER, 0)
     # curlobj.setopt(pycurl.KEEP_SENDING_ON_ERROR, 1)
@@ -397,7 +397,7 @@ def get_media(data):
     speed = 0
     initbyte = 0
     playerclosed = 0
-    rawheaders = BytesIO()
+    interrupted = 0
     if not livecontent or not manifesturl:
         maxbytes = 524288
         # maxbytes = 30000
@@ -405,21 +405,21 @@ def get_media(data):
     else:
         maxbytes = 0
     while True:
-        columns = os.get_terminal_size().columns
-        if twbytes:
-            sbyte = initbyte + int(twbytes)
-            if maxbytes:
-                ebyte = sbyte + maxbytes
-                if totallength and ebyte > totallength:
-                    ebyte = totallength
-            else:
-                ebyte = ''
-            curlobj.setopt(pycurl.RANGE, '%s-%s' % (sbyte, ebyte))
-            logging.debug("Trying to resume from byte: %s to %s" % (sbyte,
-                                                                    ebyte))
         url = baseurl + segmenturl
-        
+        columns = os.get_terminal_size().columns
+        rawheaders = BytesIO()
         try:
+            if twbytes:
+                sbyte = initbyte + int(twbytes)
+                if maxbytes:
+                    ebyte = sbyte + maxbytes
+                    if totallength and ebyte > totallength:
+                        ebyte = totallength
+                else:
+                    ebyte = ''
+                curlobj.setopt(pycurl.RANGE, '%s-%s' % (sbyte, ebyte))
+                logging.debug("Trying to resume from byte: %s to %s" % (sbyte,
+                                                                        ebyte))
             curlobj.setopt(pycurl.URL, url)
             curlobj.setopt(curlobj.HEADERFUNCTION, rawheaders.write)
             if init != 1:
@@ -440,7 +440,10 @@ def get_media(data):
             if player.poll() is not None:
                 return 1
             curlobj.perform()
-            fd.flush()
+            if interrupted:
+                curlobj.setopt(pycurl.RANGE, None)
+                interrupted = 0
+            # fd.flush()
             logging.debug("WRITING TO PIPE: " + str(fd))
             # fd.write(content)
         except (BrokenPipeError, OSError) as oserr:
@@ -457,11 +460,17 @@ def get_media(data):
             elif curlerrnum == 23:
                 logging.debug("Write error and player closed, quitting...")
                 return 1
-            elif curlerrnum != 28:
-                time.sleep(segsecs)
+            elif curlerrnum == 28 or curlerrnum == 56:
+                interrupted = 1
+                time.sleep(1)
             else:
+                logging.info("No handled pycurl error number, please report it, aborting...")
                 return 1
         twbytes += int(curlobj.getinfo(pycurl.SIZE_DOWNLOAD))
+        if interrupted:
+            logging.info("Partial download, size: " + str(twbytes) + ', resuming...')
+            rawheaders.close()
+            continue
         basedelay = curlobj.getinfo(pycurl.APPCONNECT_TIME)
         # Getting metadata from headers:
         headers = dict_from_bytes(rawheaders)
@@ -1640,61 +1649,60 @@ if __name__ == '__main__':
                      nextbandwidth[1], minbandavg[1],
                      minbandlast[1], bandslastavg[1], speed,
                      videodata[vid][0].text))
-            if remainsegms <= 0 or remainsegms > 10:
-                elapsed3 = round(time.time() - starttime, 4)
-                logging.debug("---> TOTAL LOCAL DELAY: " + str(elapsed3))
-                # CHECK TO GO UP: -----------------------------------------#
-                # General check:
-                if(not args.fixed and vid < maxvid and bandwidthup and
-                   basedelayavg < segsecs):
-                    gcheck = True
-                else:
-                    gcheck = False
-                logging.debug('GCHECK:' + str(gcheck))
-                # Check per live mode type:
-                if gcheck:
-                    goup = 0
-                    if live:
-                        if lowlatency:
-                            if(remainsegms == 0 and
-                               round(delayavg, 1) == segsecs):
-                                goup = 1
-                        elif(delayavg < delaytogoup and delays[0] and
-                             delays[-1] < delaytogoup):
+            elapsed3 = round(time.time() - starttime, 4)
+            logging.debug("---> TOTAL LOCAL DELAY: " + str(elapsed3))
+            # CHECK TO GO UP: -----------------------------------------#
+            # General check:
+            if(not args.fixed and vid < maxvid and bandwidthup and
+               basedelayavg < segsecs):
+                gcheck = True
+            else:
+                gcheck = False
+            logging.debug('GCHECK:' + str(gcheck))
+            # Check per live mode type:
+            if gcheck:
+                goup = 0
+                if live:
+                    if lowlatency:
+                        if(remainsegms == 0 and
+                           round(delayavg, 1) == segsecs):
                             goup = 1
                     elif(delayavg < delaytogoup and delays[0] and
                          delays[-1] < delaytogoup):
                         goup = 1
-                    if goup:
-                        print(' ' * columns, end='\r')
-                        print('\rSwitching to higher video quality...'
-                              [0:columns], end='\r')
-                        vid += 1
-                        if otf:
-                            initvurl = videodata[vid][0].text
-                            initvurl += videodata[vid][1][0].get('sourceURL')
-                            session.setopt(pycurl.URL, initvurl)
-                            initv = session.perform_rb()
-                            logging.debug('Initurl' + initvurl)
+                elif(delayavg < delaytogoup and delays[0] and
+                     delays[-1] < delaytogoup):
+                    goup = 1
+                if goup:
+                    print(' ' * columns, end='\r')
+                    print('\rSwitching to higher video quality...'
+                          [0:columns], end='\r')
+                    vid += 1
+                    if otf:
+                        initvurl = videodata[vid][0].text
+                        initvurl += videodata[vid][1][0].get('sourceURL')
+                        session.setopt(pycurl.URL, initvurl)
+                        initv = session.perform_rb()
+                        logging.debug('Initurl' + initvurl)
 
-                        log_(("UP", vid, remainsegms, mindelay,
-                             ffmuxerdelay, delaytogoup, truedelays,
-                             truedelayavg, basedelays, basedelayavg, delays,
-                             delayavg, selectedbandwidth[1],
-                             nextbandwidth[1], minbandavg[1],
-                             minbandlast[1], bandslastavg[1], speed,
-                             videodata[vid][0].text))
-                if not lowlatency and live:
-                    sleepsecs = max(round((segsecs) - delays[-1] + 0.0005, 4), 0)
-                    logging.debug("Sleeping %s seconds..." % sleepsecs)
-                    while sleepsecs > 0:
-                        if player.poll() is not None:
-                            break
-                        partialsecs = min(1,max(round(sleepsecs, 4),0))
-                        sleepsecs -= 1
-                        if partialsecs:
-                            logging.debug("Waiting %s sec..." % partialsecs )
-                            time.sleep(partialsecs)
+                    log_(("UP", vid, remainsegms, mindelay,
+                         ffmuxerdelay, delaytogoup, truedelays,
+                         truedelayavg, basedelays, basedelayavg, delays,
+                         delayavg, selectedbandwidth[1],
+                         nextbandwidth[1], minbandavg[1],
+                         minbandlast[1], bandslastavg[1], speed,
+                         videodata[vid][0].text))
+            if remainsegms <= 0 and not lowlatency and live:
+                sleepsecs = max(round((segsecs) - delays[-1] + 0.0005, 4), 0)
+                logging.debug("Sleeping %s seconds..." % sleepsecs)
+                while sleepsecs > 0:
+                    if player.poll() is not None:
+                        break
+                    partialsecs = min(1,max(round(sleepsecs, 4),0))
+                    sleepsecs -= 1
+                    if partialsecs:
+                        logging.debug("Waiting %s sec..." % partialsecs )
+                        time.sleep(partialsecs)
         # End While -
         del urls[0]
     sys.stdout.flush()
