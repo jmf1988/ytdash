@@ -275,6 +275,7 @@ def get_mediadata(curlobj, videoid):
         curlobj.setopt(pycurl.URL, manifesturl)
         curlobj.setopt(pycurl.ACCEPT_ENCODING, 'gzip, deflate')
         rawmanifest = curlobj.perform_rb().decode('iso-8859-1')
+        curlobj.setopt(pycurl.ACCEPT_ENCODING, None)
         status = curlobj.getinfo(pycurl.RESPONSE_CODE)
         if status != 200:
             logging.info("Error getting manifest content...")
@@ -768,7 +769,6 @@ if __name__ == '__main__':
     session = pycurl.Curl()
     # session.headers['User-Agent'] += ' ytdash/0.1 (gzip)'
     session.setopt(pycurl.HTTPHEADER, ['User-Agent: ytdash/0.1 (gzip)'])
-    session.setopt(pycurl.ACCEPT_ENCODING, 'gzip, deflate')
     vsegoffset = 3
     init = None
     ffmpegbase = None
