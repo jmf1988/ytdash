@@ -855,15 +855,15 @@ if __name__ == '__main__':
             apiurl = apibaseurl + apitype + '?' + urlencode(apiparams)
             try:
                 session.setopt(pycurl.URL, apiurl)
-                r = session.perform_rb().decode('UTF-8')
+                r = eval(session.perform_rs())
                 logging.debug("API URL: " + apiurl)
                 status = session.getinfo(pycurl.RESPONSE_CODE)
                 if status != 200:
-                    if status == 400 or status == 403: 
-                        reason = r['error']['message']
-                        logging.info('Bad API request: ' + reason)
-                    else:
-                        logging.info('Error code %s API request ' % str(status))
+                    logging.info('API error code: ' + str(status))
+                    reason = r['error']['errors'][0]['reason']
+                    message = r['error']['errors'][0]['message']
+                    logging.info('API reason: ' + reason)
+                    logging.info('API message: ' + message)
                     quit()
             except pycurl.error as err:
                 err = tuple(err.args)
