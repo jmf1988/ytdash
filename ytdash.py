@@ -418,21 +418,22 @@ def get_media(data):
             logging.debug("Trying to resume from byte: %s to %s" % (sbyte,
                                                                     ebyte))
         url = baseurl + segmenturl
-        curlobj.setopt(pycurl.URL, url)
-        curlobj.setopt(curlobj.HEADERFUNCTION, rawheaders.write)
-        if init != 1:
-            # Write media content to ffmpeg or player pipes:
-            if otf and not twbytes and init:
-                iwbytes = fd.write(init)
-            curlobj.setopt(pycurl.NOBODY, 0)
-            curlobj.setopt(pycurl.HEADER, 0)
-            curlobj.setopt(pycurl.WRITEDATA, fd)
-        else:
-            curlobj.setopt(pycurl.NOBODY, 1)
-        # curlobj.setopt(CURLOPT_CONNECTTIMEOUT, timeouts[0])
-        # curlobj.setopt(pycurl.TIMEOUT, timeouts[1])
-        # curlobj.setopt(pycurl.HTTPHEADER, rheaders)
+        
         try:
+            curlobj.setopt(pycurl.URL, url)
+            curlobj.setopt(curlobj.HEADERFUNCTION, rawheaders.write)
+            if init != 1:
+                # Write media content to ffmpeg or player pipes:
+                if otf and not twbytes and init:
+                    iwbytes = fd.write(init)
+                curlobj.setopt(pycurl.NOBODY, 0)
+                curlobj.setopt(pycurl.HEADER, 0)
+                curlobj.setopt(pycurl.WRITEDATA, fd)
+            else:
+                curlobj.setopt(pycurl.NOBODY, 1)
+            # curlobj.setopt(CURLOPT_CONNECTTIMEOUT, timeouts[0])
+            # curlobj.setopt(pycurl.TIMEOUT, timeouts[1])
+            # curlobj.setopt(pycurl.HTTPHEADER, rheaders)
             logging.debug("Getting Media Content.....")
             # curlobj.setopt(pycurl.WRITEFUNCTION,
             #                   lambda data:  onrecv(fd, data) )
@@ -442,7 +443,7 @@ def get_media(data):
             fd.flush()
             logging.debug("WRITING TO PIPE: " + str(fd))
             # fd.write(content)
-        except BrokenPipeError as oserr:
+        except (BrokenPipeError, OSError) as oserr:
             logging.debug("Exception Ocurred: %s %s" % (oserr, str(oserr.args)))
             return 1
         except pycurl.error as err:
@@ -453,11 +454,13 @@ def get_media(data):
                 logging.debug("Partial content, Transmision ended...")
                 fd.close()
                 return 1
-            if curlerrnum == 23:
+            elif curlerrnum == 23:
                 logging.debug("Write error and player closed, quitting...")
                 return 1
-            if curlerrnum != 28:
+            elif curlerrnum != 28:
                 time.sleep(segsecs)
+            else:
+                return 1
         twbytes += int(curlobj.getinfo(pycurl.SIZE_DOWNLOAD))
         basedelay = curlobj.getinfo(pycurl.APPCONNECT_TIME)
         # Getting metadata from headers:
@@ -1118,7 +1121,6 @@ if __name__ == '__main__':
 
         # While End ---
         if manifesturl:
-            analyzedur = int(segsecs * 1000000 * 3)
             ffbaseargs = args.ffmpeg + ' -v %s ' % ffloglevel
             ffbaseinputs = ' -thread_queue_size 500 -flags +low_delay '
             ffbaseargs += ' -analyzeduration ' + str(analyzedur)
@@ -1136,7 +1138,7 @@ if __name__ == '__main__':
             ffmpegbase = subprocess.Popen(shlex.split(ffbaseargs),
                                           stdin=subprocess.PIPE,
                                           stdout=subprocess.PIPE,
-                                          bufsize=-1,
+                                          bufsize=0,
                                           pass_fds=fffds)
             playerstdin = ffmpegbase.stdout
             ffmuxerstdout = ffmpegbase.stdin
@@ -1275,7 +1277,10 @@ if __name__ == '__main__':
                 segmsresults = []
                 reqs = []
                 rpipes = []
-                numbsegms = min(max(remainsegms, minsegms), maxsegms)
+                if firstrun:
+                    numbsegms = 1
+                else:
+                    numbsegms = min(max(remainsegms, minsegms), maxsegms)
                 for sid in range(numbsegms):
                     if not manifesturl:
                         pipebuffer = 1048576
@@ -1449,9 +1454,10 @@ if __name__ == '__main__':
                 headnumbers = headnumbers[-arrayheaderslim:]
                 if headnumbers:
                     headnumber = max(headnumbers)
-                    if not seqnumber:
-                        seqnumber = headnumber
-                    remainsegms = max(headnumber - seqnumber, 0)
+                    if not firstrun:
+                        remainsegms = max(headnumber - seqnumber, 0)
+                    else:
+                        seqnumber = headnumber - vsegoffset
                 # Check links expiring time(secs remaining):
                 if cachecontrol:
                     expiresecs = re.search(
@@ -1495,7 +1501,7 @@ if __name__ == '__main__':
                 break
             # finally:
             #    closefds(rpipes)
-
+            firstrun = 0
             # Resyncing:
             if remainsegms > segmresynclimit:
                 seqnumber = headnumber - vsegoffset
