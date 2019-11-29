@@ -453,6 +453,8 @@ def get_media(data):
             logging.debug("Pycurl Exception Ocurred: %s Args: %s" %
                           (err, str(err.args)))
             curlerrnum = err.args[0]
+            rawheaders.close()
+            print(' ' * columns, end='\r')
             if curlerrnum == 18:
                 logging.debug("Partial content, Transmision ended...")
                 fd.close()
@@ -460,16 +462,22 @@ def get_media(data):
             elif curlerrnum == 23:
                 logging.debug("Write error and player closed, quitting...")
                 return 1
-            elif curlerrnum == 28 or curlerrnum == 56:
+            elif curlerrnum == 28 or curlerrnum == 56 or curlerrnum == 7:
+                print('Download interrupted.', end='\r')
                 interrupted = 1
                 time.sleep(1)
+            elif curlerrnum == 6:
+                print("Could not resolve host, Internet down?, " +
+                      'retrying in 1 second...', end='\r')
+                time.sleep(1)
+                continue
             else:
                 logging.info("No handled pycurl error number, please report it, aborting...")
                 return 1
         twbytes += int(curlobj.getinfo(pycurl.SIZE_DOWNLOAD))
         if interrupted:
-            logging.info("Partial download, size: " + str(twbytes) + ', resuming...')
-            rawheaders.close()
+            if twbytes:
+                logging.debug("Partial download, size: " + str(twbytes))
             continue
         basedelay = curlobj.getinfo(pycurl.APPCONNECT_TIME)
         # Getting metadata from headers:
