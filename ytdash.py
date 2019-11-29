@@ -681,6 +681,11 @@ if __name__ == '__main__':
     parser.add_argument('-autoplay', action='store_true',
                         help='Autoplay all results returned by search mode ' +
                         '(default: %(default)s)')
+    parser.add_argument('-reallive', '-r', action='store_true',
+                        help='Disable pre buffers, enables true live mode ' +
+                        '(lowest latency possible) on ' +
+                        'all types of live streams. ' +
+                        '(default: %(default)s)')
     parser.add_argument('-fixed', '-f', action='store_true',
                         help='Play a fixed video quality instead of doing' +
                         ' bandwidth adaptive quality change, This is the max' +
@@ -854,11 +859,11 @@ if __name__ == '__main__':
                 logging.debug("API URL: " + apiurl)
                 status = session.getinfo(pycurl.RESPONSE_CODE)
                 if status != 200:
-                    if status == 400:
+                    if status == 400 or status == 403: 
                         reason = r['error']['message']
                         logging.info('Bad API request: ' + reason)
                     else:
-                        logging.info('Error code %s API request ' + status)
+                        logging.info('Error code %s API request ' % str(status))
                     quit()
             except pycurl.error as err:
                 err = tuple(err.args)
@@ -944,7 +949,7 @@ if __name__ == '__main__':
             del urls[0]
             continue
         else:
-            segsecs = mediadata[0]
+            latencyclass = mediadata[0]
             audiodata = mediadata[1]
             videodata = mediadata[2]
             buffersecs = mediadata[3]
@@ -969,17 +974,23 @@ if __name__ == '__main__':
         # Check the Url and Get info from Headers:
         maxaid = len(audiodata) - 1
         maxvid = len(videodata) - 1
-        minsegms = 2
-        maxsegms = 2
+        minsegms = 1
+        maxsegms = 1
+        analyzedur = 1000000
         if live:
-            if segsecs == 1:
+            if latencyclass[0] == 'ULTRA LOW':
                 logging.info('--Live mode: ULTRA LOW LATENCY--')
-            elif segsecs == 2:
+                segsecs = 1
+            elif latencyclass[0] == 'LOW':
                 logging.info('--Live mode: LOW LATENCY--')
-            elif segsecs == 5:
+                segsecs = 2
+            elif latencyclass[0] == 'NORMAL':
                 logging.info('--Live mode: NORMAL LATENCY--')
-                maxsegms = 3
-                minsegms = 1
+                segsecs = 5
+            if args.reallive:
+                remainsegms = vsegoffset = 1
+            else:
+                remainsegms = vsegoffset
         else:
             maxsegms = 1
         logging.debug("Segment duration in secs: " + str(segsecs))
