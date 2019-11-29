@@ -344,7 +344,7 @@ def get_mediadata(curlobj, videoid):
                      'retry with higher values...')
         return 3
     logging.info("Total video Qualitys Choosen: %s" % len(videodata))
-    return (segsecs, audiodata, videodata, buffersecs, earliestseqnum,
+    return (latencyclass, audiodata, videodata, buffersecs, earliestseqnum,
             startnumber, metadata)
 
 
@@ -730,7 +730,7 @@ if __name__ == '__main__':
 
     if args.player == 'mpv':
         cachesecs = 60  # max precached content in seconds
-        backcachesize = 20  # max back RAM cached media played/skipped to keep,Mb
+        cachesize = 20  # max back RAM cached media played/skipped to keep,Mb
         playerbaseargs = (' --input-terminal=no ' +
                           '--af lavfi="[alimiter=limit=0.1:level=enabled]"' )
         #              ' --rebase-start-time=yes'
@@ -1188,9 +1188,9 @@ if __name__ == '__main__':
             if manifesturl:
                 playerargs += ('--cache-secs=%s ' % cachesecs +
                                '--demuxer-max-back-bytes=%s ' %
-                               (backcachesize * 1048576) +
+                               (cachesize * 1048576) +
                                '--demuxer-max-bytes=%s ' %
-                               (backcachesize * 1048576) )
+                               (cachesize * 1048576) )
         elif args.player == 'vlc':
             playerargs += (' --input-title-format "%s" ' % (title + " - " +
                                                             author) +
