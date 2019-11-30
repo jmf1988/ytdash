@@ -1264,7 +1264,10 @@ if __name__ == '__main__':
         ffmuxerdelay = 0
         bandwidthavg = 0
         cachecontrol = 0
-        arraydelayslim = min(remainsegms, 3)
+        if remainsegms:
+            arraydelayslim = min(remainsegms, 3)
+        else:
+            arraydelayslim = 1
         ssegms = 1
         aend = vend = 0
         # initv = inita = 1
@@ -1523,7 +1526,7 @@ if __name__ == '__main__':
             if not firstrun and mindelay > segsecs * 0.75:
                 logging.info('Min delay to high: %s seconds, ' % mindelay +
                              'playback not realistic')
-            basedelays = basedelays[-min(vsegoffset*2, 3*2):]
+            basedelays = basedelays[-arraydelayslim * 2:]
             if len(basedelays) > 0:
                 basedelayavg = round(sum(basedelays) / (
                                      2 * len(basedelays)), 4)
