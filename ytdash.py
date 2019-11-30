@@ -1191,7 +1191,8 @@ if __name__ == '__main__':
             playerargs += (' --title="%s" ' % (title + " - " + author) +
                            '--osd-playing-msg="%s" ' % description +
                            '--osd-font-size=%s ' % 25 +
-                           '--osd-duration=%s ' % 20000 +
+                           '--osd-duration=%s ' % 
+                           min(len(description) * 25, 10000) +
                            '--osd-align-x=center ' +
                            '--demuxer-max-bytes=%s ' %
                            (cachesize * 1048576) +
