@@ -677,7 +677,7 @@ if __name__ == '__main__':
                         help='filter results by video livense type ' +
                         '(default: %(default)s)')
     parser.add_argument('-playlist', type=str, default='',
-                        help=' Play urls found om filename playlist ' +
+                        help=' Play urls found in file ' +
                         '(default: %(default)s)')
     parser.add_argument('-maxresults', '-mr', type=int, default=5,
                         help='search max results (default: %(default)s)')
@@ -704,20 +704,18 @@ if __name__ == '__main__':
                         help='Autoplay all results returned by search mode ' +
                         '(default: %(default)s)')
     parser.add_argument('-reallive', '-r', action='store_true',
-                        help='Disable pre buffers, enables true live mode ' +
-                        '(lowest latency possible) on ' +
+                        help='Enables lowest latency possible with ' +
                         'all types of live streams. ' +
                         '(default: %(default)s)')
     parser.add_argument('-fixed', '-f', action='store_true',
                         help='Play a fixed video quality instead of doing' +
                         ' bandwidth adaptive quality change, This is the max' +
                         ' set from options (default: %(default)s)')
-    parser.add_argument('--offset', '-o', type=time_type, default='',
-                        help='Time offset from where to start ' +
-                        ' to play. can be negative or ' +
-                        ' positive  (i.e: -o 2h, -o 210m, --offset 3000s or' +
-                        ' --offset=-3h, -o=-5m, -o=-300s, for hours, minutes,' +
-                        ' seconds respectively.) (default: %(default)s)')
+    parser.add_argument('-offset', '-o', type=time_type, default='',
+                        help='Time offset from where the playback start,' +
+                        '(i.e: -o 2h, -o 210m, -offset 3000s, for hours,' +
+                        ' minutes and seconds respectively.) ' +
+                        '(default: 3 segments)')
     args = parser.parse_args()
     # Logging:
     if args.debug:
@@ -1266,13 +1264,7 @@ if __name__ == '__main__':
         ffmuxerdelay = 0
         bandwidthavg = 0
         cachecontrol = 0
-        if live or postlivedvr:
-            remainsegms = 3
-            # maxsegms = 3
-        else:
-            remainsegms = 1
-            maxsegms = 1
-        arraydelayslim = 3
+        arraydelayslim = min(remainsegms, 3)
         ssegms = 1
         aend = vend = 0
         # initv = inita = 1
