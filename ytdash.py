@@ -1007,7 +1007,7 @@ if __name__ == '__main__':
                 logging.info('--Live mode: NORMAL LATENCY--')
                 segsecs = 5
             if args.reallive:
-                remainsegms = vsegoffset = 1
+                remainsegms = vsegoffset = 0
             else:
                 remainsegms = vsegoffset
         else:
