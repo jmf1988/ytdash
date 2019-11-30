@@ -352,7 +352,7 @@ def get_mediadata(curlobj, videoid):
 
 def ffmuxer(ffmpegbin, ffmuxerstdout, apipe, vpipe):
     ffmpegargs = '%s -y -v %s -nostdin ' % (ffmpegbin, ffloglevel)
-    ffmpegargsinputs = '-thread_queue_size 2000000 -flags +low_delay '
+    ffmpegargsinputs = '-blocksize 512 -thread_queue_size 512 -flags +low_delay '
     if apipe:
         ffmpegargs += ffmpegargsinputs + '-i async:pipe:%s ' % apipe
         fds = (apipe, vpipe)
