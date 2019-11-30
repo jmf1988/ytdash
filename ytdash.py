@@ -1619,15 +1619,16 @@ if __name__ == '__main__':
                         bandwidthup = 1
                     logging.debug("Bandwidth UP: %s" % bandwidthup)
                 logging.debug("Bandwidth DOWN: %s" % bandwidthdown)
-                if inita and initv:
-                    inita = 0
-                    initv = 0
-                    aid, vid = get_quality_ids((audiodata, videodata),
-                                               Bandwidths)
             else:
                 bandwidthup = 1
                 bandwidthdown = 1
             bandwidthdown = 1
+            if inita and initv:
+                inita = 0
+                initv = 0
+                if not args.fixed:
+                    aid, vid = get_quality_ids((audiodata, videodata),
+                                               Bandwidths)
             # CHECK TO GO DOWN: -------------------------------------------#
             if(not args.fixed and vid > minvid and ffmuxerdelay < 1 and
                bandwidthdown and delays[-1] <= segsecs * len(videodata) and
