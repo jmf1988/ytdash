@@ -29,10 +29,13 @@ usage: ytdash [-h] [--version] [-quiet] [-search] [-nonlive]
               [-duration {any,long,medium,short}]
               [-videotype {any,episode,movie}]
               [-type {video,channel,playlist}] [-definition {hd,sd,any}]
-              [-license {creativeCommon,youtube,any}] [-maxresults MAXRESULTS]
-              [-debug] [-player PLAYER] [-maxfps MAXFPS] [-maxband MAXBAND]
-              [-maxheight MAXHEIGHT] [-maxwidth MAXWIDTH] [-ffmpeg FFMPEG]
-              [-fixed] [-offset OFFSET]
+              [-license {creativeCommon,youtube,any}] [-playlist PLAYLIST]
+              [-maxresults MAXRESULTS] [-debug] [-player PLAYER]
+              [-maxfps MAXFPS] [-maxband MAXBAND]
+              [-maxheight {144,240,360,480,720,1080,1440,2160,4320}]
+              [-maxwidth {256,426,640,854,1280,1920,2560,3840,7680}]
+              [-ffmpeg FFMPEG] [-autoplay] [-reallive] [-fixed]
+              [--offset OFFSET]
               URL|QUERY [URL|QUERY ...]
 
 Youtube DASH video playback.
@@ -63,6 +66,7 @@ optional arguments:
                         filter results by video definition (default: any)
   -license {creativeCommon,youtube,any}
                         filter results by video livense type (default: any)
+  -playlist PLAYLIST    Play urls found om filename playlist (default: )
   -maxresults MAXRESULTS, -mr MAXRESULTS
                         search max results (default: 5)
   -debug, -d            enable debug mode (default: False)
@@ -79,23 +83,26 @@ optional arguments:
                         max video width to allow (default: 1360)
   -ffmpeg FFMPEG, -ff FFMPEG
                         ffmpeg location route (default: ffmpeg)
+  -autoplay             Autoplay all results returned by search mode (default:
+                        False)
+  -reallive, -r         Enable lowest latency possible on all types of live streams.
+                        (default: False)
   -fixed, -f            Play a fixed video quality instead of doing bandwidth
                         adaptive quality change, This is the max set from
                         options (default: False)
-  --offset OFFSET, -o OFFSET
-                        Time offset from where to start to play. can be
-                        negative or positive (i.e: -o 2h, -o 210m, --offset
-                        3000s or --offset=-3h, -o=-5m, -o=-300s, for hours,
-                        minutes, seconds respectively.) (default: )
+  -offset OFFSET, -o OFFSET
+                        Time offset to start to play. (i.e: -o 2h, -o
+                        210m, -offset 3000s, for hours, minutes, seconds
+                        respectively.) (default: )
 
 </pre>
 Examples:
 
-To play a single video are all equivalent:
-- ytldash.py "https://www.youtube.com/watch?v=lrX6ktLg8WQ"
-- ytldash.py "//youtube.com/watch?v=lrX6ktLg8WQ"
-- ytldash.py "https://youtu.be.com/lrX6ktLg8WQ"
-- ytldash.py "lrX6ktLg8WQ"
+To play a single video with id lrX6ktLg8WQ type:
+- ytdash.py "https://www.youtube.com/watch?v=lrX6ktLg8WQ" or
+- ytdash.py "//youtube.com/watch?v=lrX6ktLg8WQ" or
+- ytdash.py "https://youtu.be/lrX6ktLg8WQ" or
+- ytdash.py "lrX6ktLg8WQ"
 
 To search a live video in a channel listing the first 10 results to choose or playing if only one live video found:
 
@@ -109,7 +116,7 @@ Extreme example:
 
 To play first 5 videos in a channel one by one with a max height of 720, max FPS of 30, using a max bandwidth of 400 kB/s, with an offset, of -30 minutes and with bandwidth adaptative mode disabled:
 
-- ytdash.py "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -f -maxresults 5 -offset=-30m -maxfps 30 -maxheight 720 -maxband 400
+- ytdash.py "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -f -maxresults 5 -offset 30m -maxfps 30 -maxheight 720 -maxband 400
 
 That will discard all videos above the first limit reached and play the maximun quality left in fixed mode (the selected quality will be not switched to a lower one even if delays or bandwidth drops are detected.)
 
