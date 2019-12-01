@@ -32,6 +32,19 @@ except ImportError:
     maxwidth, maxheight = 1360, 768
     pass
 
+class Writer:
+    def __init__(self, file):
+        self.file = file
+    def write(self, data):
+        # sys.stderr.write(data)
+        if player.poll() is not None:
+            fd.close()
+            return 0
+        self.file.write(data)
+  
+
+class Ended(Exception):
+    pass      
 
 def time_type(string):
     #  timepattern=re.compile(r"^[0-9]+[h,s,m]{0,1}$")
@@ -88,10 +101,6 @@ def dict_from_bytes(byteheaders):
             header = header.split(': ')
             headers[header[0]] = header[1]
     return headers
-
-
-class Ended(Exception):
-    pass
 
 
 def log_(infos):
@@ -381,8 +390,7 @@ def ffmuxer(ffmpegbin, ffmuxerstdout, apipe, vpipe):
 def get_media(data):
     baseurl, segmenturl, fd, curlobj, init = data
     retries503 = 5
-    retries40x = 5
-    conerr = 0
+    interruptretries = 3
     twbytes = 0
     acceptranges = None
     headnumber = 0
@@ -430,7 +438,8 @@ def get_media(data):
                     iwbytes = fd.write(init)
                 curlobj.setopt(pycurl.NOBODY, 0)
                 curlobj.setopt(pycurl.HEADER, 0)
-                curlobj.setopt(pycurl.WRITEDATA, fd)
+                # curlobj.setopt(pycurl.WRITEDATA, fd)
+                curlobj.setopt(pycurl.WRITEFUNCTION, Writer(fd).write)
             else:
                 curlobj.setopt(pycurl.NOBODY, 1)
             # curlobj.setopt(CURLOPT_CONNECTTIMEOUT, timeouts[0])
@@ -457,15 +466,18 @@ def get_media(data):
             curlerrnum = err.args[0]
             rawheaders.close()
             print(' ' * columns, end='\r')
-            if curlerrnum == 18:
-                logging.debug("Partial content, Transmision ended...")
+            if curlerrnum == 23:
+                logging.debug("Write error and player closed, quitting...")
                 fd.close()
                 return 1
-            elif curlerrnum == 23:
-                logging.debug("Write error and player closed, quitting...")
-                return 1
-            elif curlerrnum == 28 or curlerrnum == 56 or curlerrnum == 7:
+            elif (curlerrnum == 18 or curlerrnum == 28 or curlerrnum == 56 or
+                  curlerrnum == 7):
                 print('Download interrupted.', end='\r')
+                if not interruptretries:
+                    logging.info("Retries after interrupt exhausted, aborting...")
+                    fd.close()
+                    return 1
+                interruptretries -= 1
                 interrupted = 1
                 time.sleep(1)
             elif curlerrnum == 6:
@@ -475,6 +487,7 @@ def get_media(data):
                 continue
             else:
                 logging.info("No handled pycurl error number, please report it, aborting...")
+                fd.close()
                 return 1
         twbytes += int(curlobj.getinfo(pycurl.SIZE_DOWNLOAD))
         if interrupted:
@@ -1693,9 +1706,6 @@ if __name__ == '__main__':
                             time.sleep(partialsecs)
             # EXCEPTIONS: -------------------------------------------------#
             except Ended:
-                for curlobjs in segcurlobjs:
-                    for curlobj in curlobjs:
-                        curlobj = None
                 if player.poll() is not None:
                     print(' ' * columns, end='\r')
                     logging.info("Player Closed... ")
