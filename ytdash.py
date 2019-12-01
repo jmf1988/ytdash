@@ -679,6 +679,9 @@ if __name__ == '__main__':
     parser.add_argument('-playlist', type=str, default='',
                         help=' Play urls found in file ' +
                         '(default: %(default)s)')
+    parser.add_argument('-fullscreen', '-fs', action='store_true',
+                        help=' Play urls found in file ' +
+                        '(default: %(default)s)')
     parser.add_argument('-maxresults', '-mr', type=int, default=5,
                         help='search max results (default: %(default)s)')
     parser.add_argument('-debug', '-d', action='store_true',
@@ -755,6 +758,8 @@ if __name__ == '__main__':
                           '--af lavfi="[alimiter=limit=0.1:level=enabled]"' )
         #              ' --rebase-start-time=yes'
         #              '--profile=low-latency'
+        if args.fullscreen:
+            playerbaseargs += ' --fullscreen '
         if not args.debug:
             playerbaseargs += ' --really-quiet=yes '
     elif args.player == 'vlc':
@@ -762,7 +767,6 @@ if __name__ == '__main__':
     else:
         playerbaseargs = ' - '
     logging.debug('PLAYER CMD: ' + args.player + playerbaseargs)
-    autoresync = 1  # Drop segments on high delays to keep live
     # CURL Session:
     session = pycurl.Curl()
     # session.headers['User-Agent'] += ' ytdash/0.1 (gzip)'
@@ -1392,7 +1396,8 @@ if __name__ == '__main__':
                             except subprocess.TimeoutExpired:
                                 logging.debug('Checking player...')
                                 if player.poll() is not None:
-                                    raise Ended
+                                    end = 1
+                                    break
                     ffmuxerdelay = round(time.time() - ffmuxerstarttimer, 4)
                     if manifesturl and not inita == initv == 1:
                         logging.debug('FFmpeg read pipes: %s, %s' %
@@ -1492,6 +1497,200 @@ if __name__ == '__main__':
                             buffersecs = metadata[3]
                             earliestseqnum = metadata[4]
                             startnumber = metadata[5]
+                firstrun = 0
+                # Resyncing:
+                if remainsegms > segmresynclimit:
+                    seqnumber = headnumber - vsegoffset
+                    print(' ' * columns, end='\r')
+                    logging.info('Resyncing...')
+                # DELAYS: -----------------------------------------------------#
+                # Min latency check:
+                if not firstrun and mindelay > segsecs * 0.75:
+                    logging.info('Min delay to high: %s seconds, ' % mindelay +
+                                 'playback not realistic')
+                basedelays = basedelays[-arraydelayslim * 2:]
+                if len(basedelays) > 0:
+                    basedelayavg = round(sum(basedelays) / (
+                                         2 * len(basedelays)), 4)
+                    mindelay = min(min(basedelays) / 2, mindelay)
+                    truedelay = round(delays[-1] - (max(basedelays[-2:])/2), 3)
+                    truedelays.append(truedelay)
+                    truedelays = truedelays[-arraydelayslim:]
+                    truedelayavg = round(sum(truedelays) / len(truedelays), 3)
+                if live:
+                    ssegms = len(segmsresults)
+                delay = round((time.time() - starttime - ffmuxerdelay) / ssegms, 4)
+                delays.append(round(delay, 4))
+                delays = delays[-arraydelayslim:]
+                delayavg = round(sum(delays) / len(delays), 2)
+                delaytogoup = max(round(segsecs / 3, 3), 1)
+                threadsc = active_threads()
+                logging.debug("--> DELAY TO UP: %s seconds\n" % delaytogoup +
+                              "--> BASEDELAYS: %s seconds\n" % basedelays +
+                              "--> BASEDELAY AVG: %s seconds\n" % basedelayavg +
+                              "--> MIN DELAY: %s seconds\n" % mindelay +
+                              "--> DELAYS: %s" % delays +
+                              "--> DELAY AVG: %s seconds\n" % delayavg +
+                              "--> FFMPEG DELAYS: %s\n" % ffmuxerdelay +
+                              "--> Threads Count: %s\n" % threadsc)
+                # -------------------------------------------------------------#
+
+                # BANDWIDTHS: -------------------------------------------------#
+                speeds = speeds[-arraydelayslim:]
+                speed = max(speeds)
+                if not args.fixed and (live or postlivedvr):
+                    if bandwidthavg:
+                        Bandwidths[0].append(round(bandwidthavg * 8, 1))
+                    if bandwidthest:
+                        Bandwidths[1].append(round(bandwidthest * 8, 1))
+                    if bandwidthest2:
+                        Bandwidths[2].append(round(bandwidthest2 * 8, 1))
+                    if bandwidthest3:
+                        Bandwidths[3].append(round(bandwidthest3 * 8, 1))
+                    # Limit subarrays to min segments offset length:
+                    for i in range(len(Bandwidths)):
+                        Bandwidths[i] = Bandwidths[i][-arrayheaderslim:]
+                        BandwidthsAvgs[i] = int(sum(Bandwidths[i]) /
+                                                len(Bandwidths[i]))
+                        lastbands.append(Bandwidths[i][-1])
+                    lastbands = lastbands[-4:]
+                    #
+                    pvid = max(vid - 1, minvid)
+                    prevbandwidthb = int(
+                                        videodata[pvid].attrib.get('bandwidth'))
+                    selectedbandwidthb = int(
+                                         videodata[vid].attrib.get('bandwidth'))
+                    selectedbandwidth = [selectedbandwidthb + 144000,
+                                         ((selectedbandwidthb + 144000)/8)/1024]
+                    selectedbandwidth[1] = round(selectedbandwidth[1], 1)
+                    nvid = min(vid + 1, len(videodata) - 1)
+                    nextbandwidthb = int(
+                                        videodata[nvid].attrib.get('bandwidth'))
+                    nextbandwidth = [nextbandwidthb + 144000,
+                                     ((nextbandwidthb + 144000)/8) / 1024]
+                    nextbandwidth[1] = round(nextbandwidth[1], 1)
+                    # Min values:
+                    if BandwidthsAvgs[0] and int(segsecs) <= 5:
+                        startid = 1
+                        endid = None
+                    else:
+                        startid = 1
+                        endid = None
+                    minband = min(BandwidthsAvgs[startid:endid])
+                    minbandavg = (minband, round((minband/8)/1024))
+                    minbandlast = min(lastbands[startid:endid])
+                    minbandlast = (minbandlast, round((minbandlast/8)/1024))
+                    bandslastavg = round(sum(lastbands[startid:endid]) /
+                                         len(lastbands[startid:endid]))
+                    bandslastavg = (bandslastavg, round((bandslastavg/8)/1024))
+                    print(' ' * columns, end='\r')
+                    ptext = ('\rBandwidth Last Avg/Min: %skB/s' % bandslastavg[1] +
+                             ' / %skB/s ' % minbandlast[1] +
+                             ' - Delay Avg/Last %ss / %ss' % (delayavg, delays[-1]))
+                    print(ptext[0:columns], end='\r', flush=True)
+                    bandwidthdown = 0
+                    bandwidthup = 0
+                    if(minbandlast[0] <= prevbandwidthb and
+                       minbandlast[0] <= prevbandwidthb):
+                        bandwidthdown = 1
+                    else:
+                        sensup = 1
+                        if(minbandavg[0] > nextbandwidth[0] * sensup and
+                           ((speed * 8) + minbandavg[0]) / 2 > nextbandwidth[0] * sensup and
+                           minbandlast[0] > nextbandwidth[0] * sensup):
+                            bandwidthup = 1
+                        logging.debug("Bandwidth UP: %s" % bandwidthup)
+                    logging.debug("Bandwidth DOWN: %s" % bandwidthdown)
+                else:
+                    bandwidthup = 1
+                    bandwidthdown = 1
+                bandwidthdown = 1
+                if inita and initv:
+                    inita = 0
+                    initv = 0
+                    if not args.fixed:
+                        aid, vid = get_quality_ids((audiodata, videodata),
+                                                   Bandwidths)
+                # CHECK TO GO DOWN: -------------------------------------------#
+                if(not args.fixed and vid > minvid and ffmuxerdelay < 1 and
+                   bandwidthdown and delays[-1] <= segsecs * len(videodata) and
+                   ((segsecs <= 2 and delayavg > segsecs * 1.2 and
+                     delays[-1] > segsecs * 1.2) or
+                    (segsecs > 2 and delayavg > segsecs and
+                     delays[-1] > segsecs))):
+                    print(' ' * columns, end='\r')
+                    print('\rDelays detected, switching to lower video quality...'
+                          [0:columns], end='\r')
+                    inertia = int(max(round(delayavg / segsecs, 4), 1))
+                    vid = int(max(minvid, vid - inertia))
+                    if otf:
+                        initvurl = videodata[vid][0].text
+                        initvurl += videodata[vid][1][0].get(
+                                                            'sourceURL')
+                        session.setopt(pycurl.URL, initvurl)
+                        initv = session.perform_rb()
+                        logging.debug('Initurl' + initvurl)
+                    log_(("DOWN", vid, remainsegms, mindelay,
+                         ffmuxerdelay, delaytogoup, truedelays,
+                         truedelayavg, basedelays, basedelayavg, delays,
+                         delayavg, selectedbandwidth[1],
+                         nextbandwidth[1], minbandavg[1],
+                         minbandlast[1], bandslastavg[1], speed,
+                         videodata[vid][0].text))
+                elapsed3 = round(time.time() - starttime, 4)
+                logging.debug("---> TOTAL LOCAL DELAY: " + str(elapsed3))
+                # CHECK TO GO UP: -----------------------------------------#
+                # General check:
+                if(not args.fixed and vid < maxvid and bandwidthup and
+                   basedelayavg < segsecs):
+                    gcheck = True
+                else:
+                    gcheck = False
+                logging.debug('GCHECK:' + str(gcheck))
+                # Check per live mode type:
+                if gcheck:
+                    goup = 0
+                    if live:
+                        if lowlatency:
+                            if(remainsegms == 0 and
+                               round(delayavg, 1) == segsecs):
+                                goup = 1
+                        elif(delayavg < delaytogoup and delays[0] and
+                             delays[-1] < delaytogoup):
+                            goup = 1
+                    elif(delayavg < delaytogoup and delays[0] and
+                         delays[-1] < delaytogoup):
+                        goup = 1
+                    if goup:
+                        print(' ' * columns, end='\r')
+                        print('\rSwitching to higher video quality...'
+                              [0:columns], end='\r')
+                        vid += 1
+                        if otf:
+                            initvurl = videodata[vid][0].text
+                            initvurl += videodata[vid][1][0].get('sourceURL')
+                            session.setopt(pycurl.URL, initvurl)
+                            initv = session.perform_rb()
+                            logging.debug('Initurl' + initvurl)
+
+                        log_(("UP", vid, remainsegms, mindelay,
+                             ffmuxerdelay, delaytogoup, truedelays,
+                             truedelayavg, basedelays, basedelayavg, delays,
+                             delayavg, selectedbandwidth[1],
+                             nextbandwidth[1], minbandavg[1],
+                             minbandlast[1], bandslastavg[1], speed,
+                             videodata[vid][0].text))
+                if remainsegms <= 0 and not lowlatency and live:
+                    sleepsecs = max(round((segsecs) - delays[-1] + 0.0005, 4), 0)
+                    logging.debug("Sleeping %s seconds..." % sleepsecs)
+                    while sleepsecs > 0:
+                        if player.poll() is not None:
+                            raise Ended
+                        partialsecs = min(1,max(round(sleepsecs, 4),0))
+                        sleepsecs -= 1
+                        if partialsecs:
+                            logging.debug("Waiting %s sec..." % partialsecs )
+                            time.sleep(partialsecs)
             # EXCEPTIONS: -------------------------------------------------#
             except Ended:
                 for curlobjs in segcurlobjs:
@@ -1505,7 +1704,7 @@ if __name__ == '__main__':
                     logging.info('Streaming completed, waiting player...')
                     player.communicate()
                     player.wait()
-                pool.shutdown(wait=False)
+                pool.shutdown(wait=True)
                 if ffmpegbase:
                     ffmpegbase.kill()
                     ffmpegbase.wait()
@@ -1513,202 +1712,6 @@ if __name__ == '__main__':
                     ffmpegmuxer.kill()
                     ffmpegmuxer.wait()
                 break
-            # finally:
-            #    closefds(rpipes)
-            firstrun = 0
-            # Resyncing:
-            if remainsegms > segmresynclimit:
-                seqnumber = headnumber - vsegoffset
-                print(' ' * columns, end='\r')
-                logging.info('Resyncing...')
-            # DELAYS: -----------------------------------------------------#
-            # Min latency check:
-            if not firstrun and mindelay > segsecs * 0.75:
-                logging.info('Min delay to high: %s seconds, ' % mindelay +
-                             'playback not realistic')
-            basedelays = basedelays[-arraydelayslim * 2:]
-            if len(basedelays) > 0:
-                basedelayavg = round(sum(basedelays) / (
-                                     2 * len(basedelays)), 4)
-                mindelay = min(min(basedelays) / 2, mindelay)
-                truedelay = round(delays[-1] - (max(basedelays[-2:])/2), 3)
-                truedelays.append(truedelay)
-                truedelays = truedelays[-arraydelayslim:]
-                truedelayavg = round(sum(truedelays) / len(truedelays), 3)
-            if live:
-                ssegms = len(segmsresults)
-            delay = round((time.time() - starttime - ffmuxerdelay) / ssegms, 4)
-            delays.append(round(delay, 4))
-            delays = delays[-arraydelayslim:]
-            delayavg = round(sum(delays) / len(delays), 2)
-            delaytogoup = max(round(segsecs / 3, 3), 1)
-            threadsc = active_threads()
-            logging.debug("--> DELAY TO UP: %s seconds\n" % delaytogoup +
-                          "--> BASEDELAYS: %s seconds\n" % basedelays +
-                          "--> BASEDELAY AVG: %s seconds\n" % basedelayavg +
-                          "--> MIN DELAY: %s seconds\n" % mindelay +
-                          "--> DELAYS: %s" % delays +
-                          "--> DELAY AVG: %s seconds\n" % delayavg +
-                          "--> FFMPEG DELAYS: %s\n" % ffmuxerdelay +
-                          "--> Threads Count: %s\n" % threadsc)
-            # -------------------------------------------------------------#
-
-            # BANDWIDTHS: -------------------------------------------------#
-            speeds = speeds[-arraydelayslim:]
-            speed = max(speeds)
-            if not args.fixed and (live or postlivedvr):
-                if bandwidthavg:
-                    Bandwidths[0].append(round(bandwidthavg * 8, 1))
-                if bandwidthest:
-                    Bandwidths[1].append(round(bandwidthest * 8, 1))
-                if bandwidthest2:
-                    Bandwidths[2].append(round(bandwidthest2 * 8, 1))
-                if bandwidthest3:
-                    Bandwidths[3].append(round(bandwidthest3 * 8, 1))
-                # Limit subarrays to min segments offset length:
-                for i in range(len(Bandwidths)):
-                    Bandwidths[i] = Bandwidths[i][-arrayheaderslim:]
-                    BandwidthsAvgs[i] = int(sum(Bandwidths[i]) /
-                                            len(Bandwidths[i]))
-                    lastbands.append(Bandwidths[i][-1])
-                lastbands = lastbands[-4:]
-                #
-                pvid = max(vid - 1, minvid)
-                prevbandwidthb = int(
-                                    videodata[pvid].attrib.get('bandwidth'))
-                selectedbandwidthb = int(
-                                     videodata[vid].attrib.get('bandwidth'))
-                selectedbandwidth = [selectedbandwidthb + 144000,
-                                     ((selectedbandwidthb + 144000)/8)/1024]
-                selectedbandwidth[1] = round(selectedbandwidth[1], 1)
-                nvid = min(vid + 1, len(videodata) - 1)
-                nextbandwidthb = int(
-                                    videodata[nvid].attrib.get('bandwidth'))
-                nextbandwidth = [nextbandwidthb + 144000,
-                                 ((nextbandwidthb + 144000)/8) / 1024]
-                nextbandwidth[1] = round(nextbandwidth[1], 1)
-                # Min values:
-                if BandwidthsAvgs[0] and int(segsecs) <= 5:
-                    startid = 1
-                    endid = None
-                else:
-                    startid = 1
-                    endid = None
-                minband = min(BandwidthsAvgs[startid:endid])
-                minbandavg = (minband, round((minband/8)/1024))
-                minbandlast = min(lastbands[startid:endid])
-                minbandlast = (minbandlast, round((minbandlast/8)/1024))
-                bandslastavg = round(sum(lastbands[startid:endid]) /
-                                     len(lastbands[startid:endid]))
-                bandslastavg = (bandslastavg, round((bandslastavg/8)/1024))
-                print(' ' * columns, end='\r')
-                ptext = ('\rBandwidth Last Avg/Min: %skB/s' % bandslastavg[1] +
-                         ' / %skB/s ' % minbandlast[1] +
-                         ' - Delay Avg/Last %ss / %ss' % (delayavg, delays[-1]))
-                print(ptext[0:columns], end='\r', flush=True)
-                bandwidthdown = 0
-                bandwidthup = 0
-                if(minbandlast[0] <= prevbandwidthb and
-                   minbandlast[0] <= prevbandwidthb):
-                    bandwidthdown = 1
-                else:
-                    sensup = 1
-                    if(minbandavg[0] > nextbandwidth[0] * sensup and
-                       ((speed * 8) + minbandavg[0]) / 2 > nextbandwidth[0] * sensup and
-                       minbandlast[0] > nextbandwidth[0] * sensup):
-                        bandwidthup = 1
-                    logging.debug("Bandwidth UP: %s" % bandwidthup)
-                logging.debug("Bandwidth DOWN: %s" % bandwidthdown)
-            else:
-                bandwidthup = 1
-                bandwidthdown = 1
-            bandwidthdown = 1
-            if inita and initv:
-                inita = 0
-                initv = 0
-                if not args.fixed:
-                    aid, vid = get_quality_ids((audiodata, videodata),
-                                               Bandwidths)
-            # CHECK TO GO DOWN: -------------------------------------------#
-            if(not args.fixed and vid > minvid and ffmuxerdelay < 1 and
-               bandwidthdown and delays[-1] <= segsecs * len(videodata) and
-               ((segsecs <= 2 and delayavg > segsecs * 1.2 and
-                 delays[-1] > segsecs * 1.2) or
-                (segsecs > 2 and delayavg > segsecs and
-                 delays[-1] > segsecs))):
-                print(' ' * columns, end='\r')
-                print('\rDelays detected, switching to lower video quality...'
-                      [0:columns], end='\r')
-                inertia = int(max(round(delayavg / segsecs, 4), 1))
-                vid = int(max(minvid, vid - inertia))
-                if otf:
-                    initvurl = videodata[vid][0].text
-                    initvurl += videodata[vid][1][0].get(
-                                                        'sourceURL')
-                    session.setopt(pycurl.URL, initvurl)
-                    initv = session.perform_rb()
-                    logging.debug('Initurl' + initvurl)
-                log_(("DOWN", vid, remainsegms, mindelay,
-                     ffmuxerdelay, delaytogoup, truedelays,
-                     truedelayavg, basedelays, basedelayavg, delays,
-                     delayavg, selectedbandwidth[1],
-                     nextbandwidth[1], minbandavg[1],
-                     minbandlast[1], bandslastavg[1], speed,
-                     videodata[vid][0].text))
-            elapsed3 = round(time.time() - starttime, 4)
-            logging.debug("---> TOTAL LOCAL DELAY: " + str(elapsed3))
-            # CHECK TO GO UP: -----------------------------------------#
-            # General check:
-            if(not args.fixed and vid < maxvid and bandwidthup and
-               basedelayavg < segsecs):
-                gcheck = True
-            else:
-                gcheck = False
-            logging.debug('GCHECK:' + str(gcheck))
-            # Check per live mode type:
-            if gcheck:
-                goup = 0
-                if live:
-                    if lowlatency:
-                        if(remainsegms == 0 and
-                           round(delayavg, 1) == segsecs):
-                            goup = 1
-                    elif(delayavg < delaytogoup and delays[0] and
-                         delays[-1] < delaytogoup):
-                        goup = 1
-                elif(delayavg < delaytogoup and delays[0] and
-                     delays[-1] < delaytogoup):
-                    goup = 1
-                if goup:
-                    print(' ' * columns, end='\r')
-                    print('\rSwitching to higher video quality...'
-                          [0:columns], end='\r')
-                    vid += 1
-                    if otf:
-                        initvurl = videodata[vid][0].text
-                        initvurl += videodata[vid][1][0].get('sourceURL')
-                        session.setopt(pycurl.URL, initvurl)
-                        initv = session.perform_rb()
-                        logging.debug('Initurl' + initvurl)
-
-                    log_(("UP", vid, remainsegms, mindelay,
-                         ffmuxerdelay, delaytogoup, truedelays,
-                         truedelayavg, basedelays, basedelayavg, delays,
-                         delayavg, selectedbandwidth[1],
-                         nextbandwidth[1], minbandavg[1],
-                         minbandlast[1], bandslastavg[1], speed,
-                         videodata[vid][0].text))
-            if remainsegms <= 0 and not lowlatency and live:
-                sleepsecs = max(round((segsecs) - delays[-1] + 0.0005, 4), 0)
-                logging.debug("Sleeping %s seconds..." % sleepsecs)
-                while sleepsecs > 0:
-                    if player.poll() is not None:
-                        break
-                    partialsecs = min(1,max(round(sleepsecs, 4),0))
-                    sleepsecs -= 1
-                    if partialsecs:
-                        logging.debug("Waiting %s sec..." % partialsecs )
-                        time.sleep(partialsecs)
         # End While -
         del urls[0]
     sys.stdout.flush()
