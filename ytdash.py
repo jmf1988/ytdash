@@ -356,7 +356,7 @@ def get_mediadata(curlobj, videoid):
         return 3
     logging.info("Total video Qualitys Choosen: %s" % len(videodata))
     return (latencyclass, audiodata, videodata, buffersecs, earliestseqnum,
-            startnumber, metadata)
+            startnumber, metadata, segsecs)
 
 
 def ffmuxer(ffmpegbin, ffmuxerstdout, apipe, vpipe):
@@ -468,7 +468,7 @@ def get_media(data):
             print(' ' * columns, end='\r')
             if curlerrnum == 23:
                 logging.debug("Write error and player closed, quitting...")
-                fd.close()
+                #fd.close()
                 return 1
             elif (curlerrnum == 18 or curlerrnum == 28 or curlerrnum == 56 or
                   curlerrnum == 7):
@@ -992,6 +992,7 @@ if __name__ == '__main__':
             earliestseqnum = mediadata[4]
             startnumber = mediadata[5]
             metadata = mediadata[6]
+            segsecs = mediadata[7]
             title = metadata.get('title')
             description = metadata.get('shortDescription')
             author = metadata.get('author')
