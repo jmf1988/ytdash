@@ -1195,10 +1195,10 @@ if __name__ == '__main__':
             vpipe = os.pipe()
             if args.player == 'mpv':
                 # playerargs += '--audio-file=%s ' % audiodata[aid]['url']
-                playerargs += '--audio-file=fd://%s' % apipe[0]
+                playerargs += ' --audio-file=fd://%s ' % apipe[0]
             elif args.player == 'vlc':
                 # playerargs += '--input-slave="%s"' % audiodata[aid]['url']
-                playerargs += '--input-slave=fd://%s ' % apipe[0]
+                playerargs += ' --input-slave=fd://%s ' % apipe[0]
             # playerargs += ' "%s" ' % videodata[vid]['url']
             playerargs += ' fd://%s ' % vpipe[0]
             playerstdin = None
