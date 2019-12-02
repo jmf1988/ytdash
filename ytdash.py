@@ -264,10 +264,10 @@ def get_mediadata(curlobj, videoid):
         videodata = nomanvideodata
         cipher = 0
         nourls = 0
-        if not audiodata[aid].get('url') or not videodata[vid].get('url'):
+        if not audiodata[-1].get('url') or not videodata[-1].get('url'):
             logging.info('Media Urls could not be found.')
             nourls = 1
-            if audiodata[aid].get('cipher') or videodata[vid].get('cipher'):
+            if audiodata[-1].get('cipher') or videodata[-1].get('cipher'):
                 logging.debug('Ciphered url/s.')
                 cipher = 1
         if nourls or cipher:
