@@ -48,7 +48,7 @@ class Ended(Exception):
 
 def time_type(string):
     #  timepattern=re.compile(r"^[0-9]+[h,s,m]{0,1}$")
-    if not re.match(r"^[+,-]{0,1}[0-9]+[HhMmSs]+$|^$", string):
+    if not re.match(r"^[+,-]{0,1}[0-9]+[HhMmSs]$|^$", string):
         raise argparse.ArgumentTypeError
     return string
 
@@ -1066,7 +1066,9 @@ if __name__ == '__main__':
             Bandwidths = [[0], [0], [0], [0]]
             logging.debug("Back buffer depth in secs: " + str(buffersecs))
             logging.debug("Earliest seq number: " + str(earliestseqnum))
-            # max Nº of pending segments allowed before forcing resync:
+            # Youtube default max backbuffer in seconds (12h):
+            buffersecs = 43200
+            # max Nº of  segments available :
             segmresynclimit = buffersecs/segsecs
             headnumber = len(audiodata[1][2]) + earliestseqnum - 1
             if startnumber > earliestseqnum:
@@ -1076,45 +1078,27 @@ if __name__ == '__main__':
             # elif starttime:
             #    seqnumber = startnumber +
             elif args.offset:
-                offsetnum = args.offset[0:-1]
+                offsetnum = int(args.offset[0:-1])
                 offsetunit = args.offset[-1]
-                if re.match('^[0-9]+$', offsetnum):
-                    floffset = float(args.offset[0:-1])
-                else:
-                    print('Invalid time offset format...')
-                    quit()
                 if offsetunit == "h":
-                    vsegoffset = int((floffset*3600)/segsecs)
-                    if floffset > 4:
+                    vsegoffset = int((offsetnum*3600)/segsecs)
+                    if offsetnum > 12:
                         logging.debug('''The max back buffer hours is %s,
                                         playing
                                         from oldest segment available'''
                                       % str(buffersecs/3600))
                 elif offsetunit == "m":
-                    vsegoffset = int((floffset*60)/segsecs)
-                    if floffset > 240:
+                    vsegoffset = int((offsetnum*60)/segsecs)
+                    if offsetnum > 720:
                         logging.debug('''The max back buffer minutes is %s,
                                      playing from oldest segment available
                                      ''' % str(buffersecs/60))
                 elif offsetunit == "s":
-                    vsegoffset = int(int(floffset)/segsecs)
-                    if floffset > buffersecs:
+                    vsegoffset = int(int(offsetnum)/segsecs)
+                    if offsetnum > buffersecs:
                         logging.debug('The max backbuffer seconds ' +
                                       'is %s, playing ' % buffersecs +
                                       'from there')
-                elif re.match('^[0-9]+$', args.offset):
-                    if headnumber - int(args.offset) >= earliestseqnum:
-                        vsegoffset = int(args.offset)
-                    else:
-                        logging.debug("The oldest segment to " +
-                                      "play is %s, playing " % buffersecs +
-                                      "from there")
-                else:
-                    logging.debug("No valid value entered for third " +
-                                  "argument, acepted values are; " +
-                                  " i.e: 2h, 210m or 3000s or 152456, " +
-                                  "for hours, minutes, seconds and " +
-                                  "nº of segment respectively.")
                 vsegoffset = min(segmresynclimit, vsegoffset, headnumber)
             vsegoffset = asegoffset = int(vsegoffset)
             seqnumber = int(headnumber - vsegoffset)
