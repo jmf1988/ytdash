@@ -802,7 +802,7 @@ if __name__ == '__main__':
     # CURL Session:
     session = pycurl.Curl()
     # session.headers['User-Agent'] += ' ytdash/0.1 (gzip)'
-    session.setopt(pycurl.HTTPHEADER, ['User-Agent: ytdash/0.1 (gzip)'])
+    session.setopt(pycurl.HTTPHEADER, ['User-Agent: ytdash/0.1'])
     vsegoffset = 3
     init = None
     ffmpegbase = None
