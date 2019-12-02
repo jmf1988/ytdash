@@ -390,7 +390,8 @@ def ffmuxer(ffmpegbin, ffmuxerstdout, apipe, vpipe):
 def get_media(data):
     baseurl, segmenturl, fd, curlobj, init = data
     retries503 = 5
-    interruptretries = 3
+    interruptretries = -1
+    curlerr18retries = 3
     twbytes = 0
     acceptranges = None
     headnumber = 0
@@ -466,12 +467,20 @@ def get_media(data):
             curlerrnum = err.args[0]
             rawheaders.close()
             print(' ' * columns, end='\r')
-            if curlerrnum == 23:
+            if curlerrnum == 18:
+                logging.debug("Server closed connection with unknown data remaining...")
+                if not curlerr18retries:
+                    logging.info("Curl error 18 retries exhausted, aborting...")
+                    fd.close()
+                    return 1
+                curlerr18retries -= 1
+                interrupted = 1
+                time.sleep(1)
+            elif curlerrnum == 23:
                 logging.debug("Write error and player closed, quitting...")
                 #fd.close()
                 return 1
-            elif (curlerrnum == 18 or curlerrnum == 28 or curlerrnum == 56 or
-                  curlerrnum == 7):
+            elif (curlerrnum == 7 or curlerrnum == 28 or curlerrnum == 56):
                 print('Download interrupted.', end='\r')
                 if not interruptretries:
                     logging.info("Retries after interrupt exhausted, aborting...")
