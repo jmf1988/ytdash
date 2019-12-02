@@ -262,6 +262,16 @@ def get_mediadata(curlobj, videoid):
     if not livecontent or not manifesturl:
         audiodata = nomanaudiodata
         videodata = nomanvideodata
+        cipher = 0
+        nourls = 0
+        if not audiodata[aid].get('url') or not videodata[vid].get('url'):
+            logging.info('Media Urls could not be found.')
+            nourls = 1
+            if audiodata[aid].get('cipher') or videodata[vid].get('cipher'):
+                logging.debug('Ciphered url/s.')
+                cipher = 1
+        if nourls or cipher:
+            return 3
     # logging Details:
     logging.info('View count: ' + viewcount)
     logging.debug('postLiveDVR: ' + str(postlivedvr))
@@ -990,8 +1000,10 @@ if __name__ == '__main__':
             elif mediadata == 2:
                 print('Video stream not available...')
             elif mediadata == 3:
-                print('Could\'t get all video data needed...')
+                print('Unable to get all media data needed...')
             del urls[0]
+            if urls:
+                print('Skipping video...')
             continue
         else:
             latencyclass = mediadata[0]
