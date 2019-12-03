@@ -793,9 +793,6 @@ if __name__ == '__main__':
         fd.write(str(os.getpgrp()))
 
     if args.player == 'mpv':
-        cachesecs = 60
-        backcachesize = 20 * 1048576  # max player backbuffer to conserve, in Mb
-        cachesize = 20 * 1048576  # max player backbuffer to conserve, in Mb
         playerbaseargs = (' --input-terminal=no ' +
                           '--af lavfi="[alimiter=limit=0.1:level=enabled]"' )
         #              ' --rebase-start-time=yes'
@@ -812,7 +809,7 @@ if __name__ == '__main__':
     # CURL Session:
     session = pycurl.Curl()
     # session.headers['User-Agent'] += ' ytdash/0.1 (gzip)'
-    session.setopt(pycurl.HTTPHEADER, ['User-Agent: ytdash/0.1'])
+    session.setopt(pycurl.HTTPHEADER, ['User-Agent: ytdash/0.14'])
     vsegoffset = 3
     init = None
     ffmpegbase = None
@@ -1055,6 +1052,12 @@ if __name__ == '__main__':
         minsegms = 1
         maxsegms = 1
         analyzedur = 1000000
+        #Player max cache in secs
+        cachesecs = 120
+        # max player backbuffer to conserve, in Mb
+        backcachesize = 50 * 1048576
+        # max player backbuffer to conserve, in Mb
+        cachesize = 50 * 1048576
         if live:
             if latencyclass[0] == 'ULTRA LOW':
                 logging.info('--Live mode: ULTRA LOW LATENCY--')
