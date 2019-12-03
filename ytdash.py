@@ -308,9 +308,9 @@ def get_mediadata(curlobj, videoid):
         startnumber = int(SegmentList.attrib.get('startNumber', 0))
         presentationTimeOffset = int(SegmentList.attrib.get(
                                                    'presentationTimeOffset', 0))
-        periodstarttime = Period.get('start')[2:-1]
+        periodstarttime = Period.get('start')
         if periodstarttime:
-            periodstarttime = int(float(periodstarttime))
+            periodstarttime = int(float(periodstarttime[2:-1]))
             metadata['start'] = periodstarttime
         earliestseqnum = int(MPD.get('{http://youtube.com/yt/2012/10/10}' +
                                      'earliestMediaSequence', 0))
@@ -717,7 +717,7 @@ if __name__ == '__main__':
                         choices=['creativeCommon', 'youtube', 'any'],
                         help='filter results by video livense type ' +
                         '(default: %(default)s)')
-    parser.add_argument('-playlist', type=str, default='',
+    parser.add_argument('-playlist', action='store_true',
                         help=' Play urls found in file ' +
                         '(default: %(default)s)')
     parser.add_argument('-fullscreen', '-fs', action='store_true',
@@ -825,11 +825,13 @@ if __name__ == '__main__':
     BandwidthsAvgs = [0, 1, 2, 3]
     # (X11; Linux x86_64)
     if args.playlist:
-        with open(args.playlist, 'r') as fd:
-            urls = fd.readlines()
-        if not urls:
-            logging.info('No urls found on given file.')
-            quit()
+        urls = list()
+        for playlist in args.urls:
+            with open(playlist, 'r') as fd:
+                urls += fd.read().splitlines()
+            if not urls:
+                logging.info('No urls found on given file.')
+                quit()
     else:
         urls = args.urls
     # for urlid in range(len(urls)):
@@ -837,6 +839,10 @@ if __name__ == '__main__':
         playerargs = playerbaseargs
         url = urlparse(urls[0])
         urlquery = url.query
+        if url.fragment and args.playlist:
+            print('Playlist track title:' + url.fragment)
+            del urls[0]
+            continue
         if not args.offset:
             args.offset = parse_qs(url.query).get('t', [''])[0]
             if args.offset and args.offset[-1:] != 's':
@@ -865,14 +871,16 @@ if __name__ == '__main__':
                                      'disabled, enable search mode to' +
                                      ' list videos found in it or use '
                                      ' directly a video url or id instead.')
-                        quit()
+                        del urls[0]
+                        continue
         elif not args.search:
             if url.path and re.match(idre, url.path):
                 videoid = url.path
             else:
                 logging.info('Could not find a video or channel id' +
                              ' in the given string')
-                quit()
+                del urls[0]
+                continue
         if videoid:
             apitype = 'videos'
         else:
