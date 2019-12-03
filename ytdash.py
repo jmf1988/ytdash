@@ -311,6 +311,7 @@ def get_mediadata(curlobj, videoid):
         periodstarttime = Period.get('start')[2:-1]
         if periodstarttime:
             periodstarttime = int(float(periodstarttime))
+            metadata['start'] = periodstarttime
         earliestseqnum = int(MPD.get('{http://youtube.com/yt/2012/10/10}' +
                                      'earliestMediaSequence', 0))
         timescale = float(SegmentList.get('timescale', 0))
@@ -322,7 +323,7 @@ def get_mediadata(curlobj, videoid):
             segsecs = int(minuperiod[2:-1])
         elif timescale:
             segsecs = round(float(SegmentList[0][0].get('d')) / timescale)
-        segmentsnumber = len(SegmentList[0])
+        metadata['segmentsnumber'] = len(SegmentList[0])
         # Media Metadata:
         if otf:
             if not lowlatency:
@@ -374,7 +375,7 @@ def get_mediadata(curlobj, videoid):
         return 3
     logging.info("Total video Qualitys Choosen: %s" % len(videodata))
     return (latencyclass, audiodata, videodata, buffersecs, earliestseqnum,
-            startnumber, metadata, segsecs, periodstarttime, segmentsnumber)
+            startnumber, metadata, segsecs)
 
 
 def ffmuxer(ffmpegbin, ffmuxerstdout, apipe, vpipe):
@@ -1023,8 +1024,8 @@ if __name__ == '__main__':
             startnumber = mediadata[5]
             metadata = mediadata[6]
             segsecs = mediadata[7]
-            periodstarttime = mediadata[8]
-            segmentsnumber = mediadata[9]
+            periodstarttime = metadata.get('start')
+            segmentsnumber = metadata.get('segmentsnumber')
             title = metadata.get('title')
             description = metadata.get('shortDescription')
             author = metadata.get('author')
