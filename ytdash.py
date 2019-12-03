@@ -48,7 +48,7 @@ class Ended(Exception):
 
 def time_type(string):
     #  timepattern=re.compile(r"^[0-9]+[h,s,m]{0,1}$")
-    if not re.match(r"^[+,-]{0,1}[0-9]+[HhMmSs]$|^$", string):
+    if not re.match(r"^[0-9]+[HhMmSs]$|^$", string):
         raise argparse.ArgumentTypeError
     return string
 
@@ -148,7 +148,7 @@ def get_mediadata(curlobj, videoid):
     url = 'https://www.youtube.com/get_video_info?video_id=' + videoid
     logging.debug('Opening URL: %s ' % url)
     curlobj.setopt(pycurl.URL, url)
-    videoquery = curlobj.perform_rb().decode('iso-8859-1')
+    videoquery = curlobj.perform_rs()
     # logging.debug('Video Query: %s ' % videoquery)
     status = curlobj.getinfo(pycurl.RESPONSE_CODE)
     if status != 200:
@@ -293,7 +293,7 @@ def get_mediadata(curlobj, videoid):
         logging.debug("Manifest URL: %s" % manifesturl)
         curlobj.setopt(pycurl.URL, manifesturl)
         curlobj.setopt(pycurl.ACCEPT_ENCODING, 'gzip, deflate')
-        rawmanifest = curlobj.perform_rb().decode('iso-8859-1')
+        rawmanifest = curlobj.perform_rs()
         curlobj.setopt(pycurl.ACCEPT_ENCODING, None)
         status = curlobj.getinfo(pycurl.RESPONSE_CODE)
         if status != 200:
@@ -302,19 +302,27 @@ def get_mediadata(curlobj, videoid):
         # if reason:
         if postlivedvr and not args.offset:
             return 1
-        tree = ET.fromstring(rawmanifest)
-        startnumber = int(tree[0][0].attrib.get('startNumber', 0))
-        earliestseqnum = int(tree.get('{http://youtube.com/yt/2012/10/10}' +
-                                      'earliestMediaSequence', 0))
-        timescale = float(tree[0][0].get('timescale', 0))
-        buffersecs = tree.get('timeShiftBufferDepth')
+        MPD = ET.fromstring(rawmanifest)
+        Period = MPD[0]
+        SegmentList = MPD[0][0]
+        startnumber = int(SegmentList.attrib.get('startNumber', 0))
+        presentationTimeOffset = int(SegmentList.attrib.get(
+                                                   'presentationTimeOffset', 0))
+        periodstarttime = Period.get('start')[2:-1]
+        if periodstarttime:
+            periodstarttime = int(float(periodstarttime))
+        earliestseqnum = int(MPD.get('{http://youtube.com/yt/2012/10/10}' +
+                                     'earliestMediaSequence', 0))
+        timescale = float(SegmentList.get('timescale', 0))
+        buffersecs = MPD.get('timeShiftBufferDepth')
         if buffersecs:
             buffersecs = float(buffersecs[2:-1])
-        minuperiod = tree[0].get('minimumUpdatePeriod')
+        minuperiod = Period.get('minimumUpdatePeriod')
         if minuperiod:
             segsecs = int(minuperiod[2:-1])
         elif timescale:
-            segsecs = round(float(tree[0][0][0][0].get('d')) / timescale)
+            segsecs = round(float(SegmentList[0][0].get('d')) / timescale)
+        segmentsnumber = len(SegmentList[0])
         # Media Metadata:
         if otf:
             if not lowlatency:
@@ -324,8 +332,8 @@ def get_mediadata(curlobj, videoid):
         else:
             ida = 1
             idv = 2
-        audiodata = tree[0][ida].findall("[@mimeType='audio/mp4']/")
-        videodata = tree[0][idv].findall("[@mimeType='video/mp4']/")
+        audiodata = Period[ida].findall("[@mimeType='audio/mp4']/")
+        videodata = Period[idv].findall("[@mimeType='video/mp4']/")
         # Sort by bandwidth needed:
         for mtype in audiodata, videodata:
             mtype.sort(key=lambda mid: int(mid.attrib.get('bandwidth', 0)))
@@ -366,7 +374,7 @@ def get_mediadata(curlobj, videoid):
         return 3
     logging.info("Total video Qualitys Choosen: %s" % len(videodata))
     return (latencyclass, audiodata, videodata, buffersecs, earliestseqnum,
-            startnumber, metadata, segsecs)
+            startnumber, metadata, segsecs, periodstarttime, segmentsnumber)
 
 
 def ffmuxer(ffmpegbin, ffmuxerstdout, apipe, vpipe):
@@ -399,7 +407,7 @@ def ffmuxer(ffmpegbin, ffmuxerstdout, apipe, vpipe):
 
 def get_media(data):
     baseurl, segmenturl, fd, curlobj, init = data
-    retries503 = 5
+    retries503 =  retries40x = 5
     interruptretries = -1
     curlerr18retries = 3
     twbytes = 0
@@ -784,8 +792,9 @@ if __name__ == '__main__':
         fd.write(str(os.getpgrp()))
 
     if args.player == 'mpv':
-        cachesecs = 60  # max precached content in seconds
-        cachesize = 20  # max back RAM cached media played/skipped to keep,Mb
+        cachesecs = 60
+        backcachesize = 20 * 1048576  # max player backbuffer to conserve, in Mb
+        cachesize = 20 * 1048576  # max player backbuffer to conserve, in Mb
         playerbaseargs = (' --input-terminal=no ' +
                           '--af lavfi="[alimiter=limit=0.1:level=enabled]"' )
         #              ' --rebase-start-time=yes'
@@ -1014,6 +1023,8 @@ if __name__ == '__main__':
             startnumber = mediadata[5]
             metadata = mediadata[6]
             segsecs = mediadata[7]
+            periodstarttime = mediadata[8]
+            segmentsnumber = mediadata[9]
             title = metadata.get('title')
             description = metadata.get('shortDescription')
             author = metadata.get('author')
@@ -1044,6 +1055,8 @@ if __name__ == '__main__':
                 segsecs = 2
             elif latencyclass[0] == 'NORMAL':
                 logging.info('--Live mode: NORMAL LATENCY--')
+                minsegms = 1
+                maxsegms = 1
                 segsecs = 5
             if args.reallive:
                 remainsegms = vsegoffset = 0
@@ -1064,46 +1077,47 @@ if __name__ == '__main__':
             aidu = 1
             minvid = 1
             Bandwidths = [[0], [0], [0], [0]]
-            logging.debug("Back buffer depth in secs: " + str(buffersecs))
-            logging.debug("Earliest seq number: " + str(earliestseqnum))
-            # Youtube default max backbuffer in seconds (12h):
-            buffersecs = 43200
-            # max Nº of  segments available :
-            segmresynclimit = buffersecs/segsecs
-            headnumber = len(audiodata[1][2]) + earliestseqnum - 1
+            # Limit backbuffer to youtube's max default in seconds (12h):
+            if not periodstarttime:
+                maxbackbuffersecs = segmentsnumber*segsecs
+            else:
+                maxbackbuffersecs = min(periodstarttime+buffersecs, 43200)
+            # Limit of segment number to force resync :
+            segmresynclimit = 43200/segsecs
+            headnumber = len(audiodata[1][2]) + earliestseqnum
+            fromzero = 0
             if startnumber > earliestseqnum:
+                # This are forced live streams (without pause button, no offset)
+                logging.info('Live stream type: Forced live')
+                logging.info('Time offsets are disabled for this stream.')
                 segmresynclimit = startnumber - earliestseqnum
-                if vsegoffset > segmresynclimit:
-                    vsegoffset = segmresynclimit - 1
-            # elif starttime:
-            #    seqnumber = startnumber +
+                cachesecs = segmresynclimit * segsecs
+                backcachesize = 0
+                maxbackbuffersecs = segsecs * vsegoffset
             elif args.offset:
+                # This is for live streams with backbuffer available:
                 offsetnum = int(args.offset[0:-1])
                 offsetunit = args.offset[-1]
                 if offsetunit == "h":
-                    vsegoffset = int((offsetnum*3600)/segsecs)
-                    if offsetnum > 12:
-                        logging.debug('''The max back buffer hours is %s,
-                                        playing
-                                        from oldest segment available'''
-                                      % str(buffersecs/3600))
+                    secs = 3600
                 elif offsetunit == "m":
-                    vsegoffset = int((offsetnum*60)/segsecs)
-                    if offsetnum > 720:
-                        logging.debug('''The max back buffer minutes is %s,
-                                     playing from oldest segment available
-                                     ''' % str(buffersecs/60))
+                    secs = 60
                 elif offsetunit == "s":
-                    vsegoffset = int(int(offsetnum)/segsecs)
-                    if offsetnum > buffersecs:
-                        logging.debug('The max backbuffer seconds ' +
-                                      'is %s, playing ' % buffersecs +
-                                      'from there')
-                vsegoffset = min(segmresynclimit, vsegoffset, headnumber)
-            vsegoffset = asegoffset = int(vsegoffset)
+                    secs = 1
+                # Filter time to the max allowed:
+                offsetsecs = min(maxbackbuffersecs, offsetnum*secs)
+                vsegoffset = int(offsetsecs/segsecs)
+                if offsetsecs < offsetnum*secs:
+                    if not startnumber:
+                        fromzero = 1
+                    logging.info('Maximum time offset available is ' +
+                                 str(int(maxbackbuffersecs/secs)) +
+                                 ', playing from there...')
+                # vsegoffset = min(segmresynclimit, vsegoffset, headnumber)
+            asegoffset = int(vsegoffset)
             seqnumber = int(headnumber - vsegoffset)
-            if lowlatency:
-                seqnumber = ''
+            logging.debug("Back buffer depth in secs: " + str(buffersecs))
+            logging.debug("Earliest seq number: " + str(earliestseqnum))
             logging.debug('HEADNUMBER: %s, ' % headnumber +
                           'START NUMBER: %s, ' % startnumber +
                           'SEQNUMBER: %s, ' % seqnumber)
@@ -1215,8 +1229,7 @@ if __name__ == '__main__':
                            '--osd-duration=%s ' % 
                            min(len(description) * 25, 10000) +
                            '--osd-align-x=center ' +
-                           '--demuxer-max-bytes=%s ' %
-                           (cachesize * 1048576) +
+                           '--demuxer-max-bytes=%s ' % cachesize +
                            '--demuxer-seekable-cache=yes ' +
                            '--keep-open ')
             if args.offset:
@@ -1229,10 +1242,8 @@ if __name__ == '__main__':
                 playerargs += ' --start=%s ' % offsetsecs
             if manifesturl:
                 playerargs += ('--cache-secs=%s ' % cachesecs +
-                               '--demuxer-max-back-bytes=%s ' %
-                               (cachesize * 1048576) +
-                               '--demuxer-max-bytes=%s ' %
-                               (cachesize * 1048576) )
+                               '--demuxer-max-back-bytes=%s ' % backcachesize +
+                               '--demuxer-max-bytes=%s ' % cachesize )
         elif args.player == 'vlc':
             playerargs += (' --input-title-format "%s" ' % (title + " - " +
                                                             author) +
@@ -1494,6 +1505,9 @@ if __name__ == '__main__':
                     headnumber = max(headnumbers)
                     if not firstrun:
                         remainsegms = max(headnumber - seqnumber, 0)
+                    elif fromzero:
+                        seqnumber = 0
+                        fromzero = 0
                     else:
                         seqnumber = headnumber - vsegoffset
                 # Check links expiring time(secs remaining):
