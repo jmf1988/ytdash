@@ -38,7 +38,7 @@ class Writer:
     def write(self, data):
         # sys.stderr.write(data)
         if player.poll() is not None:
-            fd.close()
+            # fd.close()
             return 0
         self.file.write(data)
   
@@ -63,7 +63,7 @@ def request(url=None, mode='body'):
     # curlobj.setopt(pycurl.HEADER, 1)
     # curlobj.setopt(pycurl.ACCEPT_ENCODING, 'gzip, deflate')
     curlobj.setopt(pycurl.CONNECTTIMEOUT, 10)
-    curlobj.setopt(pycurl.TIMEOUT, 15)
+    curlobj.setopt(pycurl.TIMEOUT, 30)
     # curlobj.setopt(pycurl.TRANSFER_ENCODING, 1)
     # curlobj.setopt_string(CURLOPT_TCP_FASTOPEN, "1L")
     # curlobj.setopt(pycurl.RETURN_TRANSFER, True)
@@ -429,6 +429,7 @@ def get_media(data):
     playerclosed = 0
     interrupted = 0
     if not livecontent or not manifesturl:
+        curlobj.setopt(pycurl.TIMEOUT, 120)
         maxbytes = 524288
         # maxbytes = 30000
         curlobj.setopt(pycurl.RANGE, '%s-%s' % (initbyte, initbyte + maxbytes))
@@ -497,7 +498,7 @@ def get_media(data):
                 time.sleep(1)
             elif curlerrnum == 23:
                 logging.debug("Write error and player closed, quitting...")
-                #fd.close()
+                fd.close()
                 return 1
             elif (curlerrnum == 7 or curlerrnum == 28 or curlerrnum == 56):
                 print('Download interrupted.', end='\r')
@@ -643,27 +644,32 @@ def get_media(data):
 
 
 
-def closefds(totalpipes):
-    fds = []
-    if type(totalpipes) is list:
+def closepipes(totalpipes):
+    pipes = []
+    t = type(totalpipes)
+    if t is list or t is tuple:
         for segmenttuples in totalpipes:
-            if type(segmenttuples) is list:
+            t = type(segmenttuples)
+            if t is list or t is tuple:
                 for pipetuple in segmenttuples:
-                    if type(pipetuple) is tuple:
+                    t = type(pipetuple)
+                    if t is list or t is tuple:
                         for fd in pipetuple:
                             if type(fd) is int:
-                                fds.append(fd)
-                    elif type(pipetuple) is int:
-                        fds.append(fd)
-            elif type(segmenttuples) is int:
-                fds.append(segmenttuples)
-    elif type(totalpipes) is int:
-        fds.append(totalpipes)
-    for fd in fds:
+                                pipes.append(fd)
+                            else:
+                                logging.debug('closepipes limit reached.')
+                    elif t is int:
+                        pipes.append(pipetuple)
+            elif t is int:
+                pipes.append(segmenttuples)
+    elif t is int:
+        pipes.append(totalpipes)
+    for pipe in pipes:
         try:
-            if fd > 2:
-                logging.debug('Closing fd: %s' % fd)
-                os.close(fd)
+            if pipe > 2:
+                logging.debug('Closing pipe: %s' % pipe)
+                os.close(pipe)
         except OSError:
             pass
 
@@ -808,16 +814,14 @@ if __name__ == '__main__':
     logging.debug('PLAYER CMD: ' + args.player + playerbaseargs)
     # CURL Session:
     session = pycurl.Curl()
-    # session.headers['User-Agent'] += ' ytdash/0.1 (gzip)'
     session.setopt(pycurl.HTTPHEADER, ['User-Agent: ytdash/0.14'])
-    vsegoffset = 3
+    defsegoffset = 3  # youtube's default segments offset.
     init = None
     ffmpegbase = None
     player = None
     videodata = None
     vid = 0
     aid = 0
-    minsegms = 1
     ffmpegmuxer = None
     BandwidthsAvgs = [0, 1, 2, 3]
     # (X11; Linux x86_64)
@@ -840,10 +844,9 @@ if __name__ == '__main__':
             print('Playlist track title:' + url.fragment)
             del urls[0]
             continue
-        if not args.offset:
-            args.offset = parse_qs(url.query).get('t', [''])[0]
-            if args.offset and args.offset[-1:] != 's':
-                args.offset += 's'
+        urlstartime = parse_qs(url.query).get('t', [''])[0]
+        if urlstartime and urlstartime[-1:] != 's':
+            urlstartime += 's'
         urlhost = url.hostname
         urlfolders = url.path.split('/')
         idre = re.compile('^[A-z0-9_-]{11}$')
@@ -1005,9 +1008,8 @@ if __name__ == '__main__':
                 videoid = item['id']['videoId']
         # logging.info('Item selected: ' + )
         logging.info('Fetching data for video id: %s' % videoid)
-        # Get the manifest and all its Infos
+        # Get video metada:
         mediadata = get_mediadata(session, videoid)
-        # print(metadata)
         if type(mediadata) is int:
             if mediadata == 1:
                 print('Live stream recently ended, retry with a timeoffset ' +
@@ -1046,7 +1048,7 @@ if __name__ == '__main__':
             # otf = 0
             # manifesturl = 0
         logging.debug("Start number: " + str(startnumber))
-        # Check the Url and Get info from Headers:
+        asegoffset = vsegoffset = remainsegms = defsegoffset
         maxaid = len(audiodata) - 1
         maxvid = len(videodata) - 1
         minsegms = 1
@@ -1072,10 +1074,6 @@ if __name__ == '__main__':
                 segsecs = 5
             if args.reallive:
                 remainsegms = vsegoffset = 0
-            else:
-                remainsegms = vsegoffset
-        else:
-            maxsegms = 1
         logging.debug("Segment duration in secs: " + str(segsecs))
         if live or postlivedvr:
             if args.fixed:
@@ -1105,7 +1103,7 @@ if __name__ == '__main__':
                 segmresynclimit = startnumber - earliestseqnum
                 cachesecs = segmresynclimit * segsecs
                 backcachesize = 0
-                maxbackbuffersecs = segsecs * vsegoffset
+                maxbackbuffersecs = segsecs * defsegoffset
             elif args.offset:
                 # This is for live streams with backbuffer available:
                 offsetnum = int(args.offset[0:-1])
@@ -1118,7 +1116,7 @@ if __name__ == '__main__':
                     secs = 1
                 # Filter time to the max allowed:
                 offsetsecs = min(maxbackbuffersecs, offsetnum*secs)
-                vsegoffset = int(offsetsecs/segsecs)
+                vsegoffset = asegoffset = int(offsetsecs/segsecs)
                 if offsetsecs < offsetnum*secs:
                     if not startnumber:
                         fromzero = 1
@@ -1126,7 +1124,7 @@ if __name__ == '__main__':
                                  str(int(maxbackbuffersecs/secs)) +
                                  ', playing from there...')
                 # vsegoffset = min(segmresynclimit, vsegoffset, headnumber)
-            asegoffset = int(vsegoffset)
+            arraydelayslim = min(max(vsegoffset, 1), defsegoffset)
             seqnumber = int(headnumber - vsegoffset)
             logging.debug("Back buffer depth in secs: " + str(buffersecs))
             logging.debug("Earliest seq number: " + str(earliestseqnum))
@@ -1203,7 +1201,7 @@ if __name__ == '__main__':
             ffmpegbase = subprocess.Popen(shlex.split(ffbaseargs),
                                           stdin=subprocess.PIPE,
                                           stdout=subprocess.PIPE,
-                                          bufsize=0,
+                                          bufsize=-1,
                                           pass_fds=fffds)
             playerstdin = ffmpegbase.stdout
             ffmuxerstdout = ffmpegbase.stdin
@@ -1244,8 +1242,8 @@ if __name__ == '__main__':
                            '--demuxer-max-bytes=%s ' % cachesize +
                            '--demuxer-seekable-cache=yes ' +
                            '--keep-open ')
-            if args.offset:
-                offsetnum, offsetunit = args.offset[0:-1], args.offset[-1]
+            if urlstartime:
+                offsetnum, offsetunit = urlstartime[0:-1], urlstartime[-1]
                 offsetsecs = int(offsetnum)
                 if offsetunit == 'm':
                     offsetsecs *= 60
@@ -1310,10 +1308,6 @@ if __name__ == '__main__':
         ffmuxerdelay = 0
         bandwidthavg = 0
         cachecontrol = 0
-        if remainsegms:
-            arraydelayslim = min(remainsegms, 3)
-        else:
-            arraydelayslim = 1
         ssegms = 1
         aend = vend = 0
         # initv = inita = 1
@@ -1441,7 +1435,7 @@ if __name__ == '__main__':
                                     end = 1
                                     break
                     ffmuxerdelay = round(time.time() - ffmuxerstarttimer, 4)
-                    if manifesturl and not inita == initv == 1:
+                    if not end and manifesturl and not inita == initv == 1:
                         logging.debug('FFmpeg read pipes: %s, %s' %
                                       (rpipes[pid][0], rpipes[pid][1]))
                         ffmpegmuxer = ffmuxer(args.ffmpeg, ffmuxerstdout,
@@ -1450,20 +1444,14 @@ if __name__ == '__main__':
                     for mediares in segmresult:
                         while True:
                             try:
-                                result = mediares.result(timeout=segsecs)
+                                result = mediares.result(timeout=1)
+                                break
                             except TimeoutError:
                                 logging.debug('Waiting download to complete...')
                                 if player.poll() is not None:
                                     mediares.cancel()
-                                    if playerfds:
-                                        # os.read(playerfds[0], 1048576)
-                                        # os.read(playerfds[1], 1048576)
-                                        os.close(playerfds[0])
-                                        os.close(playerfds[1])
                                     result = 1
                                     break
-                            else:
-                                break
                         if type(result) is tuple:
                             (status, basedelay, headnumber,
                              headtimems, sequencenum, walltimems,
@@ -1501,8 +1489,8 @@ if __name__ == '__main__':
                             end = True
                         elif result == 2:
                             http_errors = True
-                    if (otf or not inita == initv == 1) and manifesturl:
-                        closefds(rpipes[pid])
+                    if otf or manifesturl:
+                        closepipes(rpipes[pid])
                         pid += 1
                 if http_errors:
                     print(' ' * columns, end='\r')
@@ -1696,7 +1684,7 @@ if __name__ == '__main__':
                 if gcheck:
                     goup = 0
                     if live:
-                        if lowlatency:
+                        if lowlatency and not args.offset:
                             if(remainsegms == 0 and
                                round(delayavg, 1) == segsecs):
                                 goup = 1
@@ -1746,6 +1734,9 @@ if __name__ == '__main__':
                     logging.info('Streaming completed, waiting player...')
                     player.communicate()
                     player.wait()
+                if playerfds:
+                    closepipes(playerfds)
+                # This has to be after closing players pipes or it hangs:
                 pool.shutdown(wait=True)
                 if ffmpegbase:
                     ffmpegbase.kill()
