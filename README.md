@@ -1,6 +1,6 @@
 
 # YTlivedash
-YTlivedash is a python 3 script that allows native performance by using a local player to play youtube live DASH videos without having to loose adaptive video playback, which is more important when streaming live content because there is less buffer available to pull from, to do all this latency improvements are approached with a combination of parallelized https requests, DASH protocol and keep alive connections.
+YTlivedash is a python 3 script that allows native performance by using a local player to play youtube live DASH videos without having to lose adaptative video playback, which is more important when streaming live content because there is less buffer available to pull from, to do all this latency improvements are approached with a combination of parallelized https requests, DASH protocol and keep alive connections.
 
 Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5), libcurl(>=7.43.0)
 
@@ -10,7 +10,7 @@ Dependencies installation:
 - Debian based:
 apt-get install python3 python3-pycurl python3-certifi ffmpeg mpv 
 
-Note: The above installs distro version of pycurl that cames with gnutls backend, that may use more memory and have some issues. To install pycurl with openssl backend that uses less memory and seems to have less issues do the following:
+Note: The above installs distro version of pycurl that can be outdated and come with gnutls backend enabled by default, which may use more memory and cause some issues. To install pycurl with openssl backend that uses less memory and is more realiable do the following:
 
 - Install dependecies on debian to compile libcurl to use openssl backend (better performance):
 
@@ -18,7 +18,7 @@ apt-get install python3-dev libssl-dev libcurl4-openssl-dev python3-pip
 
 PYCURL_SSL_LIBRARY=openssl pip3 install pycurl certifi --user
 
-That is it.
+That's all.
 
 Usage: 
 <pre>
@@ -98,7 +98,7 @@ optional arguments:
 </pre>
 Examples:
 
-To play a single video with id lrX6ktLg8WQ type:
+To play a single video with id lrX6ktLg8WQ:
 - ytdash.py "https://www.youtube.com/watch?v=lrX6ktLg8WQ" or
 - ytdash.py "//youtube.com/watch?v=lrX6ktLg8WQ" or
 - ytdash.py "https://youtu.be/lrX6ktLg8WQ" or
@@ -118,7 +118,7 @@ To play first 5 videos in a channel one by one with a max height of 720, max FPS
 
 - ytdash.py "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -f -maxresults 5 -offset 30m -maxfps 30 -maxheight 720 -maxband 400
 
-That will discard all videos above the first limit reached and play the maximun quality left in fixed mode (the selected quality will be not switched to a lower one even if delays or bandwidth drops are detected.)
+That will ignore all qualities of the video/s above the first lowest limit reached and play the maximum quality left in fixed mode (the selected quality will be not switched to a lower one even if delays or bandwidth drops are detected.)
 
 Non-live videos:
 It is possible to play some non-live non-restricted public videos but that is not a priority for this project and there are many others, more complete and mature tools to do it, however, the connection errors handling and reconnecting (infinite retry)  development needed for the live streams can be an advantage for long videos, these may be better handled than playing them  with a player that uses ffmpeg, with it is more difficult to pass/have complex http options/errors, like long reconnect tries, because the C Curl library used here has more polished and mature code to deal specifically with http/s, and ffmpeg is used just as a muxer/demuxer.
