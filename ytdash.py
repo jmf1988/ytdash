@@ -1550,7 +1550,7 @@ if __name__ == '__main__':
                     truedelays.append(truedelay)
                     truedelays = truedelays[-arraydelayslim:]
                     truedelayavg = round(sum(truedelays) / len(truedelays), 3)
-                if live:
+                if live or postlivedvr:
                     ssegms = len(segmsresults)
                 delay = round((time.time() - starttime - ffmuxerdelay) / ssegms, 4)
                 delays.append(round(delay, 4))
