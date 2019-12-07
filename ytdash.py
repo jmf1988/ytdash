@@ -1773,7 +1773,7 @@ if __name__ == '__main__':
                              minbandlast[1], bandslastavg[1], speed,
                              videodata[vid][0].text))
                 if remainsegms <= 0 and not lowlatency and live:
-                    sleepsecs = max(round((segsecs) - delays[-1] + 0.0005, 4), 0)
+                    sleepsecs = max(round((segsecs) - delays[-1] + 0.100, 4), 0)
                     logging.debug("Sleeping %s seconds..." % sleepsecs)
                     while sleepsecs > 0:
                         if player.poll() is not None:
