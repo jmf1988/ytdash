@@ -171,6 +171,7 @@ def get_mediadata(curlobj, videoid):
         playable = ytpresp.get('playabilityStatus')
         pstatus = playable.get('status')
         reason = playable.get('reason')
+        metadata['reason'] = reason
         if pstatus and pstatus == 'UNPLAYABLE':
             logging.info('Video status: UNPLAYABLE')
             if reason:
@@ -408,7 +409,7 @@ def ffmuxer(ffmpegbin, ffmuxerstdout, apipe, vpipe):
 
 def get_media(data):
     baseurl, segmenturl, fd, curlobj, init = data
-    retries503 =  retries40x = 5
+    retries503 =  retries40x = 3
     interruptretries = -1
     curlerr18retries = 3
     twbytes = 0
@@ -500,7 +501,7 @@ def get_media(data):
                 logging.debug("Write error and player closed, quitting...")
                 fd.close()
                 return 1
-            elif (curlerrnum == 7 or curlerrnum == 28 or curlerrnum == 56):
+            elif (curlerrnum == 7 or curlerrnum == 56):
                 print('Download interrupted.', end='\r')
                 if not interruptretries:
                     logging.info("Retries after interrupt exhausted, aborting...")
@@ -509,9 +510,9 @@ def get_media(data):
                 interruptretries -= 1
                 interrupted = 1
                 time.sleep(1)
-            elif curlerrnum == 6:
-                print("Could not resolve host, Internet down?, " +
-                      'retrying in 1 second...', end='\r')
+            elif curlerrnum == 6 or curlerrnum == 28:
+                print('Could not resolve host or connection timed out,' +
+                      'Internet down?, ' + 'retrying in 1 second...', end='\r')
                 time.sleep(1)
                 continue
             else:
@@ -576,7 +577,7 @@ def get_media(data):
         logging.debug("TOTAL LENGTH: %s" % totallength)
         # Check status codes:
         if status == 200 or status == 206:
-            retries503 = retries40x = 5
+            retries503 = retries40x = 3
             # redirurl = curlobj.getinfo(pycurl.REDIRECT_URL)
             lasturl = curlobj.getinfo(pycurl.EFFECTIVE_URL)
             if not url == lasturl:
@@ -610,37 +611,38 @@ def get_media(data):
             # logging.debug('REQUEST HEADERS: %s' %
             #              response.request.headers)
             # logging.debug('HEADERS: %s' % response.headers)
-            logging.debug("REQUEST URL: " + url)
-            if status == 204:
-                logging.debug('Retrying in %s secs' % segsecs)
-            if status == 503:
-                # curlobj.close()
-                if retries503:
-                    logging.debug("Trying redirection...")
-                    gvideohost = url.split('/')[2].split('.')[0]
-                    url = url.replace(gvideohost, "redirector")
-                    # retries503 -= 1
-            elif status == 404 or status == 400 or status == 403:
+            logging.debug("REQUEST URL: " + url)                 
+            if status == 204 or status == 503 or status == 404 or status == 400 or status == 403:
+                reason = None
                 if retries40x:
-                    logging.debug('Refreshing video metadata...')
-                    curlobj.setopt(pycurl.WRITEDATA, sys.stdout)
-                    metadata = get_mediadata(curlobj, videoid)
-                    if((type(metadata) is tuple and not
-                       metadata[6].get('isLive')) or
-                       type(metadata) is int and metadata == 1):
-                        rawheaders.close()
-                        logging.debug("Live event ended...")
-                        fd.close()
-                        return 1
-                    else:
-                        logging.debug("Live event still live...")
+                    if live:
+                        logging.info('Http errors, refreshing video metadata...')
+                        curlobj.setopt(pycurl.WRITEDATA, sys.stdout)
+                        metadata = get_mediadata(curlobj, videoid)
+                        ended = False
+                        if type(metadata) is int and metadata == 1:
+                            ended = True
+                        if type(metadata) is tuple:
+                            islive = metadata[6].get('isLive')
+                            reason = metadata[6].get('reason')
+                            if not islive:
+                                ended = True
+                            elif reason:
+                                logging.info("Youtube's reason: " + reason)
+                            else:
+                                logging.debug("Live event still live...")
+                        if ended:
+                            logging.info("Live event ended...")
+                            rawheaders.close()
+                            fd.close()
+                            return 1
                     retries40x -= 1
-                else:
+                if not retries40x or reason:
                     rawheaders.close()
                     fd.close()
                     return 2
+            logging.debug('Retrying in %s secs' % segsecs)
             time.sleep(segsecs)
-            continue
 
 
 
@@ -994,9 +996,9 @@ if __name__ == '__main__':
                 except pycurl.error as err:
                     err = tuple(err.args)
                     if err[0] == 6 or err[0] == 7:
-                        logging.warn("Connection Error, Internet connection down?")
+                        logging.warning("Connection Error, Internet connection down?")
                     else:
-                        logging.warn("Pycurl Error: %s" % str(err))
+                        logging.warning("Pycurl Error: %s" % str(err))
                     quit()
             items = rjson.get('items')
             if items:
@@ -1553,7 +1555,8 @@ if __name__ == '__main__':
                         pid += 1
                 if http_errors:
                     print(' ' * columns, end='\r')
-                    logging.info('Too many http errors, quitting.')
+                    logging.info('Too many http errors, YouTube '
+                                 'server issues?, quitting.')
                 if end or http_errors:
                     raise Ended
                 # Limit Arrays
@@ -1589,7 +1592,6 @@ if __name__ == '__main__':
                             buffersecs = metadata[3]
                             earliestseqnum = metadata[4]
                             startnumber = metadata[5]
-                firstrun = 0
                 # Resyncing:
                 if remainsegms > segmresynclimit:
                     seqnumber = headnumber - vsegoffset
@@ -1600,6 +1602,7 @@ if __name__ == '__main__':
                 if not firstrun and mindelay > segsecs * 0.75:
                     logging.info('Min delay to high: %s seconds, ' % mindelay +
                                  'playback not realistic')
+                firstrun = 0
                 basedelays = basedelays[-arraydelayslim * 2:]
                 if len(basedelays) > 0:
                     basedelayavg = round(sum(basedelays) / (
