@@ -805,6 +805,10 @@ if __name__ == '__main__':
         os.mkdir('/tmp/ytdash')
     with open('/tmp/ytdash/dash2.0.pid', 'w') as fd:
         fd.write(str(os.getpgrp()))
+    if (args.search or args.research) and args.playlist:
+        logging.info('Search mode cannot be used together with playlist mode' +
+                     ' please choose one')
+        quit()
     if args.player == 'mpv':
         playerbaseargs = (' --input-terminal=no ' +
                           '--af lavfi="[alimiter=limit=0.1:level=enabled]"' )
@@ -833,13 +837,24 @@ if __name__ == '__main__':
     BandwidthsAvgs = [0, 1, 2, 3]
     # (X11; Linux x86_64)
     if args.playlist:
-        urls = list()
+        toturls = list()
         for playlist in args.urls:
-            with open(playlist, 'r') as fd:
-                urls += fd.read().splitlines()
-            if not urls:
-                logging.info('No urls found on given file.')
-                quit()
+            try:
+                with open(playlist, 'r') as fd:
+                    fileurls = fd.read().splitlines()
+                    logging.debug("fileurls " + str(fileurls))
+            except UnicodeDecodeError:
+                logging.info('Invalid content on given file, skipping...')
+            except FileNotFoundError as ferror:
+                logging.info('No such file or directory: ' + playlist)
+            else:
+                if fileurls:
+                    toturls += fileurls
+        if not toturls:
+            logging.info('No urls found in given file/s.')
+            quit()
+        else:
+            urls = toturls
     else:
         urls = args.urls
     # for urlid in range(len(urls)):
@@ -930,13 +945,15 @@ if __name__ == '__main__':
                 apiparams['channelId'] = channelid
             else:
                 apiparams['q'] = args.urls[0]
-            searchcachefile = ('/tmp/ytdash/' +
-                re.sub('&.*?=|part=|key=.*?&', '+', urlencode(apiparams))[1:] +
-                '.cache')
             apiparams['fields'] = ('items(id,snippet/title,snippet/' +
                                    'channelTitle,snippet/description,' +
                                    'snippet/liveBroadcastContent)')
             apiurl = apibaseurl + apitype + '?' + urlencode(apiparams)
+            del apiparams['key']
+            del apiparams['part']
+            del apiparams['fields']
+            searchcachefile = ('/tmp/ytdash/' + re.sub('&.*?=', '+',
+                               urlencode(apiparams)[5:250]) + '.cache')
             # Use cached search query version if less than 1 day old:
             if not os.path.isfile(searchcachefile):
                 research = 1
@@ -954,7 +971,7 @@ if __name__ == '__main__':
                         research = 0
                         logging.info('Search query is cached, using it.')
 
-            if research :
+            if research:
                 try:
                     session.setopt(pycurl.URL, apiurl)
                     rjson = eval(session.perform_rs())
@@ -971,8 +988,9 @@ if __name__ == '__main__':
                         else:
                             del urls[0]
                             continue
-                    with open(searchcachefile, 'w') as fd:
-                        fd.write(str(rjson))
+                    if rjson.get('items'):
+                        with open(searchcachefile, 'w') as fd:
+                            fd.write(str(rjson))
                 except pycurl.error as err:
                     err = tuple(err.args)
                     if err[0] == 6 or err[0] == 7:
