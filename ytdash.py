@@ -686,7 +686,11 @@ if __name__ == '__main__':
     parser.add_argument('-quiet', '-q', action='store_true',
                         help='enable quiet mode (default: %(default)s)')
     parser.add_argument('-search', '-s', action='store_true',
-                        help='search mode (default: %(default)s)')
+                        help='search mode, cached results enabled ' +
+                        ' if searched less than 24hs ago, which saves ' +
+                        'YouTube daily quota, recommended) (default: %(default)s)')
+    parser.add_argument('-research', '-rs', action='store_true',
+                        help='Search with cached results disabled. (default: %(default)s)')
     parser.add_argument('-nonlive', '-nl', action='store_true',
                         help='search also non-live videos ' +
                         '(default: %(default)s)')
@@ -785,8 +789,9 @@ if __name__ == '__main__':
     # add the handler to the root logger
     logging.getLogger('').addHandler(console)
     logging.debug('Resolution detected: %s x %s' % (maxwidth, maxheight))
-    if os.path.isfile('/tmp/dash2.0.pid'):
-        with open('/tmp/dash2.0.pid', 'r') as fd:
+    # Check pid file:
+    if os.path.isfile('/tmp/ytdash/dash2.0.pid'):
+        with open('/tmp/ytdash/dash2.0.pid', 'r') as fd:
             prevpid = fd.read()
             if prevpid:
                 try:
@@ -795,9 +800,11 @@ if __name__ == '__main__':
                 except ProcessLookupError:
                     logging.debug("Process does not exist...")
     os.setpgrp()
-    with open('/tmp/dash2.0.pid', 'w') as fd:
+    # Check if temp dir exist:
+    if not os.path.isdir('/tmp/ytdash'):
+        os.mkdir('/tmp/ytdash')
+    with open('/tmp/ytdash/dash2.0.pid', 'w') as fd:
         fd.write(str(os.getpgrp()))
-
     if args.player == 'mpv':
         playerbaseargs = (' --input-terminal=no ' +
                           '--af lavfi="[alimiter=limit=0.1:level=enabled]"' )
@@ -866,14 +873,14 @@ if __name__ == '__main__':
                 elif url.path[0:5] == '/user':
                     userid = urlfolders[2]
                 if channelid or userid:
-                    if not args.search:
+                    if not args.search and not args.research:
                         logging.info('Channel URL given but search ' +
                                      'disabled, enable search mode to' +
                                      ' list videos found in it or use '
                                      ' directly a video url or id instead.')
                         del urls[0]
                         continue
-        elif not args.search:
+        elif not args.search and not args.research:
             if url.path and re.match(idre, url.path):
                 videoid = url.path
             else:
@@ -881,6 +888,7 @@ if __name__ == '__main__':
                              ' in the given string')
                 del urls[0]
                 continue
+        # If the url given is not a youtube ID is a search query:
         if videoid:
             apitype = 'videos'
         else:
@@ -922,32 +930,57 @@ if __name__ == '__main__':
                 apiparams['channelId'] = channelid
             else:
                 apiparams['q'] = args.urls[0]
+            searchcachefile = ('/tmp/ytdash/' +
+                re.sub('&.*?=|part=|key=.*?&', '+', urlencode(apiparams))[1:] +
+                '.cache')
             apiparams['fields'] = ('items(id,snippet/title,snippet/' +
                                    'channelTitle,snippet/description,' +
                                    'snippet/liveBroadcastContent)')
             apiurl = apibaseurl + apitype + '?' + urlencode(apiparams)
-            try:
-                session.setopt(pycurl.URL, apiurl)
-                r = eval(session.perform_rs())
-                logging.debug("API URL: " + apiurl)
-                status = session.getinfo(pycurl.RESPONSE_CODE)
-                if status != 200:
-                    logging.info('API error code: ' + str(status))
-                    reason = r['error']['errors'][0]['reason']
-                    message = r['error']['errors'][0]['message']
-                    logging.info('API reason: ' + reason)
-                    logging.info('API message: ' + message)
-                    quit()
-            except pycurl.error as err:
-                err = tuple(err.args)
-                if err[0] == 6 or err[0] == 7:
-                    logging.warn("Connection Error, Internet connection down?")
+            # Use cached search query version if less than 1 day old:
+            if not os.path.isfile(searchcachefile):
+                research = 1
+            else:
+                modtime = os.path.getmtime(searchcachefile)
+                lifetime = (time.time() - modtime) / 3600
+                if lifetime > 24 or args.research:
+                    research = 1
                 else:
-                    logging.warn("Pycurl Error: %s" % str(err))
-                quit()
-            # chardet.detect(r)['encoding']
-            # input()
-            items = json.loads(r).get('items')
+                    with open(searchcachefile, 'r') as fd:
+                        rjson = eval(str(fd.read()))
+                    if not rjson or type(rjson) is not dict:
+                        research = 1
+                    else:
+                        research = 0
+                        logging.info('Search query is cached, using it.')
+
+            if research :
+                try:
+                    session.setopt(pycurl.URL, apiurl)
+                    rjson = eval(session.perform_rs())
+                    logging.debug("API URL: " + apiurl)
+                    status = session.getinfo(pycurl.RESPONSE_CODE)
+                    if status != 200:
+                        logging.info('API error code: ' + str(status))
+                        reason = rjson['error']['errors'][0]['reason']
+                        message = rjson['error']['errors'][0]['message']
+                        logging.info('API reason: ' + reason)
+                        logging.info('API message: ' + message)
+                        if len(args.urls) < 2:
+                            quit()
+                        else:
+                            del urls[0]
+                            continue
+                    with open(searchcachefile, 'w') as fd:
+                        fd.write(str(rjson))
+                except pycurl.error as err:
+                    err = tuple(err.args)
+                    if err[0] == 6 or err[0] == 7:
+                        logging.warn("Connection Error, Internet connection down?")
+                    else:
+                        logging.warn("Pycurl Error: %s" % str(err))
+                    quit()
+            items = rjson.get('items')
             if items:
                 print("Videos found:")
             else:
@@ -977,9 +1010,11 @@ if __name__ == '__main__':
                       '    * Channel: %s\n' % channeltitle +
                       '    * Live: %s' % livebroad)
                 itemnum += 1
-            if args.search and len(items) > 1:
+            if (args.search or args.research) and len(items) > 1:
                 print('Enter nº of video to play, press '
-                      'Enter to play from the first or "q" to exit.')
+                      'Enter to play all in order, "n" to search next ' +
+                      'query if given or "q" to exit.')
+                nextquery = 0
                 while True:
                     if not args.autoplay:
                         answer = input()
@@ -991,16 +1026,22 @@ if __name__ == '__main__':
                     if type(answer) is int:
                         item = items[answer - 1]
                         break
+                    elif answer == 'n' or answer == 'N':
+                        nextquery = 1
+                        break
                     elif answer == 'q' or answer == 'Q':
                         quit()
                     elif answer == '':
                         urls += videoids[1:]
                         videoid = videoids[0]
-                        args.search = 0
+                        args.search = args.research = 0
                         break
                     else:
                         print('Invalid input, only integers from 1 to' +
                               ' %s are accepted...' % len(items))
+                if nextquery:
+                    del urls[0]
+                    continue
             else:
                 item = items[0]
             # title += ' - ' + channeltitle
@@ -1749,4 +1790,4 @@ if __name__ == '__main__':
         del urls[0]
     sys.stdout.flush()
     os.closerange(3, 100)
-    os.remove('/tmp/dash2.0.pid')
+    os.remove('/tmp/ytdash/dash2.0.pid')
