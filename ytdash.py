@@ -40,7 +40,10 @@ class Writer:
         if player.poll() is not None:
             # fd.close()
             return 0
-        self.file.write(data)
+        try:
+            self.file.write(data)
+        except BrokenPipeError:
+            return 0
   
 
 class Ended(Exception):
@@ -877,6 +880,7 @@ if __name__ == '__main__':
         videoid = None
         channelid = None
         userid = None
+        # If given string is not a video id, check if search mode is enabled:
         if urlhost:
             if url.hostname[-8:] == "youtu.be":
                 videoid = urlfolders[1]
@@ -897,27 +901,27 @@ if __name__ == '__main__':
                                      ' directly a video url or id instead.')
                         del urls[0]
                         continue
+        # Open directly if video id given with search enabled
+        elif url.path and re.match(idre, url.path):
+            videoid = url.path
         elif not args.search and not args.research:
-            if url.path and re.match(idre, url.path):
-                videoid = url.path
-            else:
-                logging.info('Could not find a video or channel id' +
-                             ' in the given string')
-                del urls[0]
-                continue
+            logging.info('Could not find a video or channel id' +
+                         ' in the given string')
+            del urls[0]
+            continue
         # If the url given is not a youtube ID is a search query:
         if videoid:
             apitype = 'videos'
         else:
             apibaseurl = 'https://www.googleapis.com/youtube/v3/'
-            apiparams = {}
-            apiparams['part'] = 'snippet'
-            apiparams['key'] = 'AIzaSyAWOONC01ILGs4dh8vnCJDO4trYbFTH4zQ'
-            apiurlchecklive = apibaseurl + 'videos?' + urlencode(apiparams)
+            apipar = {}
+            apipar['part'] = 'snippet'
+            apipar['key'] = 'AIzaSyAWOONC01ILGs4dh8vnCJDO4trYbFTH4zQ'
+            apiurlchecklive = apibaseurl + 'videos?' + urlencode(apipar)
             if userid:
                 apitype = 'channels'
-                apiparams['forUsername'] = userid
-                apiurl = apibaseurl + apitype + '?' + urlencode(apiparams)
+                apipar['forUsername'] = userid
+                apiurl = apibaseurl + apitype + '?' + urlencode(apipar)
                 session.setopt(pycurl.URL, apiurl)
                 r = session.perform_rb()
                 channelitems = json.loads(r).get('items')
@@ -926,70 +930,79 @@ if __name__ == '__main__':
                 else:
                     logging.info('Could not get user channel id')
                     quit()
-                del apiparams['forUsername']
+                del apipar['forUsername']
             apitype = 'search'
-            apiparams['type'] = 'video'
-            apiparams['order'] = args.sortby
+            apipar['type'] = 'video'
+            apipar['order'] = args.sortby
             if not args.nonlive:
-                apiparams['eventType'] = args.eventtype
-            apiparams['videoDimension'] = '2d'
-            apiparams['regionCode'] = 'AR'
-            apiparams['safeSearch'] = args.safesearch
-            apiparams['videoDuration'] = args.duration
-            apiparams['videoType'] = args.videotype
-            apiparams['type'] = args.type
-            apiparams['videoLicense'] = args.license
-            apiparams['videoDefinition'] = args.definition  # high|any
-            apiparams['maxResults'] = args.maxresults
-            apiparams['videoEmbeddable'] = 'true'
-            apiparams['videoSyndicated'] = 'true'
+                apipar['eventType'] = args.eventtype
+            apipar['videoDimension'] = '2d'
+            apipar['regionCode'] = 'AR'
+            apipar['safeSearch'] = args.safesearch
+            apipar['videoDuration'] = args.duration
+            apipar['videoType'] = args.videotype
+            apipar['type'] = args.type
+            apipar['videoLicense'] = args.license
+            apipar['videoDefinition'] = args.definition  # high|any
+            apipar['maxResults'] = args.maxresults
+            apipar['videoEmbeddable'] = 'true'
+            apipar['videoSyndicated'] = 'true'
+            searchcachefile = ('/tmp/ytdash/' + apipar['type'] + '+' +
+                    apipar['videoType'] + '+' + apipar['eventType']  + '+' +
+                    str(apipar['maxResults']) + '+' + apipar['videoDuration'] +
+                    '+' + apipar['videoDefinition'] + '+' +
+                    apipar['safeSearch'] + '+' + apipar['videoLicense'] + '+' +
+                    str(apipar['order']) + '+')
             if channelid:
-                apiparams['channelId'] = channelid
+                apipar['channelId'] = channelid
+                searchcachefile += channelid
             else:
-                apiparams['q'] = args.urls[0]
-            apiparams['fields'] = ('items(id,snippet/title,snippet/' +
+                apipar['q'] = urls[0]
+                searchcachefile += apipar['q']
+            searchcachefile += '.cache'
+            apipar['fields'] = ('items(id,snippet/title,snippet/' +
                                    'channelTitle,snippet/description,' +
                                    'snippet/liveBroadcastContent)')
-            apiurl = apibaseurl + apitype + '?' + urlencode(apiparams)
-            del apiparams['key']
-            del apiparams['part']
-            del apiparams['fields']
-            searchcachefile = ('/tmp/ytdash/' + re.sub('&.*?=', '+',
-                               urlencode(apiparams)[5:250]) + '.cache')
-            # Use cached search query version if less than 1 day old:
+            apiurl = apibaseurl + apitype + '?' + urlencode(apipar)
+            # searchcachefile = ('/tmp/ytdash/' + re.sub('&.*?=', '+',
+            #                   urlencode(apiparams)[5:250]) + '.cache')
+            # Check if cached search query version if less than 1 day old:
+            rjson = None
             if not os.path.isfile(searchcachefile):
                 research = 1
             else:
                 modtime = os.path.getmtime(searchcachefile)
                 lifetime = (time.time() - modtime) / 3600
-                if lifetime > 24 or args.research:
-                    research = 1
-                else:
-                    with open(searchcachefile, 'r') as fd:
-                        rjson = eval(str(fd.read()))
-                    if not rjson or type(rjson) is not dict:
+                with open(searchcachefile, 'r') as fd:
+                    rjson = eval(str(fd.read()))
+                if (lifetime > 24 or args.research or not rjson or
+                    type(rjson) is not dict):
                         research = 1
-                    else:
-                        research = 0
-                        logging.info('Search query is cached, using it.')
-
+                else:
+                    research = 0
+                    logging.info('Search query is cached, using it.')
             if research:
                 try:
                     session.setopt(pycurl.URL, apiurl)
-                    rjson = eval(session.perform_rs())
+                    r = eval(session.perform_rs())
                     logging.debug("API URL: " + apiurl)
                     status = session.getinfo(pycurl.RESPONSE_CODE)
                     if status != 200:
                         logging.info('API error code: ' + str(status))
-                        reason = rjson['error']['errors'][0]['reason']
-                        message = rjson['error']['errors'][0]['message']
+                        reason = r['error']['errors'][0]['reason']
+                        message = r['error']['errors'][0]['message']
                         logging.info('API reason: ' + reason)
                         logging.info('API message: ' + message)
-                        if len(args.urls) < 2:
+                        if reason == 'quotaExceeded' and rjson:
+                            research = 0
+                            logging.info('Using old cached version.')
+                        elif len(args.urls) < 2:
                             quit()
                         else:
                             del urls[0]
                             continue
+                    elif status == 200:
+                        rjson = r
                     if rjson.get('items'):
                         with open(searchcachefile, 'w') as fd:
                             fd.write(str(rjson))
@@ -1005,7 +1018,8 @@ if __name__ == '__main__':
                 print("Videos found:")
             else:
                 print("No videos found.")
-                quit()
+                del urls[0]
+                continue
             # while True:
             answer = None
             itemnum = 1
@@ -1052,9 +1066,9 @@ if __name__ == '__main__':
                     elif answer == 'q' or answer == 'Q':
                         quit()
                     elif answer == '':
-                        urls += videoids[1:]
-                        videoid = videoids[0]
-                        args.search = args.research = 0
+                        del urls[0]
+                        urls = videoids + urls
+                        videoid = urls[0]
                         break
                     else:
                         print('Invalid input, only integers from 1 to' +
