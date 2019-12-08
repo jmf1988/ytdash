@@ -744,6 +744,9 @@ if __name__ == '__main__':
                         help='enable debug mode  (default: %(default)s)')
     parser.add_argument('-player', '-p', type=str, default='mpv',
                         help='player bin name, (default: %(default)s)')
+    parser.add_argument('-novolnor', '-nv', action='store_true',
+                        help='disable volume normalization ' +
+                        ' for all videos (mpv). (default: %(default)s)')
     parser.add_argument('-maxfps', '-mf', type=int, default=60,
                         help='max video fps to allow (default: %(default)s)')
     parser.add_argument('-maxband', '-mb', type=int, default=700,
@@ -815,10 +818,11 @@ if __name__ == '__main__':
                      ' please choose one')
         quit()
     if args.player == 'mpv':
-        playerbaseargs = (' --input-terminal=no ' +
-                          '--af lavfi="[alimiter=limit=0.1:level=enabled]"' )
+        playerbaseargs = ' --input-terminal=no ' 
         #              ' --rebase-start-time=yes'
         #              '--profile=low-latency'
+        if not args.novolnor:
+            playerbaseargs += ' --af lavfi="[alimiter=limit=0.1:level=enabled]"'
         if args.fullscreen:
             playerbaseargs += ' --fullscreen '
         if not args.debug:
