@@ -808,9 +808,10 @@ if __name__ == '__main__':
                 except ProcessLookupError:
                     logging.debug("Process does not exist...")
     os.setpgrp()
-    # Check if temp dir exist:
-    if not os.path.isdir('/tmp/ytdash'):
-        os.mkdir('/tmp/ytdash')
+    # Check if cache dir exist:
+    cachedir = os.environ['HOME'] + '/.cache/ytdash/'
+    if not os.path.isdir(cachedir):
+        os.makedirs(cachedir)
     with open('/tmp/ytdash/dash2.0.pid', 'w') as fd:
         fd.write(str(os.getpgrp()))
     if (args.search or args.research) and args.playlist:
@@ -951,7 +952,7 @@ if __name__ == '__main__':
             apipar['maxResults'] = args.maxresults
             apipar['videoEmbeddable'] = 'true'
             apipar['videoSyndicated'] = 'true'
-            searchcachefile = ('/tmp/ytdash/' + apipar['type'] + '+' +
+            searchcachefile = (cachedir + apipar['type'] + '+' +
                     apipar['videoType'] + '+' + apipar['eventType']  + '+' +
                     str(apipar['maxResults']) + '+' + apipar['videoDuration'] +
                     '+' + apipar['videoDefinition'] + '+' +
@@ -997,9 +998,10 @@ if __name__ == '__main__':
                         message = r['error']['errors'][0]['message']
                         logging.info('API reason: ' + reason)
                         logging.info('API message: ' + message)
-                        if reason == 'quotaExceeded' and rjson:
-                            research = 0
-                            logging.info('Using old cached version.')
+                        if ((reason == 'quotaExceeded' or
+                             reason == 'dailyLimitExceeded') and rjson):
+                                research = 0
+                                logging.info('Using old cached version.')
                         elif len(args.urls) < 2:
                             quit()
                         else:
