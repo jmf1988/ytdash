@@ -736,6 +736,9 @@ if __name__ == '__main__':
                         help='enable debug mode  (default: %(default)s)')
     parser.add_argument('-player', '-p', type=str, default='mpv',
                         help='player bin name, (default: %(default)s)')
+    parser.add_argument('-nodescription', '-nd', action='store_true',
+                        help='Do not show video descriptions on the '
+                        'terminal/player (default: %(default)s)')
     parser.add_argument('-novolnor', '-nv', action='store_true',
                         help='disable volume normalization ' +
                         ' for all videos (mpv). (default: %(default)s)')
@@ -1305,17 +1308,17 @@ if __name__ == '__main__':
         # fd3 = os.pipe()
         # fd4 = os.pipe()
         title = title.replace('"', "\'")
-        description = description.replace('"', "\'")
         logging.info('#'*min(columns, 80))
         logging.info('* Title: %s' % title )
-        if description:
+        if not args.nodescription and description:
+            description = description.replace('"', "\'")
             logging.info('* Description: \n%s' % description )
+            playerargs += (' --osd-playing-msg="%s" ' % description +
+                           '--osd-duration=%s ' %
+                           min(len(description) * 25, 10000))
         if args.player == 'mpv':
             playerargs += (' --title="%s" ' % (title + " - " + author) +
-                           '--osd-playing-msg="%s" ' % description +
                            '--osd-font-size=%s ' % 25 +
-                           '--osd-duration=%s ' % 
-                           min(len(description) * 25, 10000) +
                            '--osd-align-x=center ' +
                            '--demuxer-max-bytes=%s ' % cachesize +
                            '--demuxer-seekable-cache=yes ' +
