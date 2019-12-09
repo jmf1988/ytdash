@@ -678,7 +678,7 @@ if __name__ == '__main__':
                                      description='Youtube DASH video playback.')
     parser.add_argument('urls', metavar='URL|QUERY', type=str, nargs='+',
                         help='URLs or search queries of videos to play')
-    parser.add_argument('--version', action='version', version='%(prog)s 0.12-alpha')
+    parser.add_argument('--version', action='version', version='%(prog)s 0.15-alpha')
     parser.add_argument('-quiet', '-q', action='store_true',
                         help='enable quiet mode (default: %(default)s)')
     parser.add_argument('-search', '-s', action='store_true',
@@ -832,7 +832,7 @@ if __name__ == '__main__':
     logging.debug('PLAYER CMD: ' + args.player + playerbaseargs)
     # CURL Session:
     session = pycurl.Curl()
-    session.setopt(pycurl.HTTPHEADER, ['User-Agent: ytdash/0.14'])
+    session.setopt(pycurl.HTTPHEADER, ['User-Agent: ytdash/0.15'])
     defsegoffset = 3  # youtube's default segments offset.
     init = None
     ffmpegbase = None
