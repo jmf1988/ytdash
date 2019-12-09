@@ -909,14 +909,15 @@ if __name__ == '__main__':
                                      ' directly a video url or id instead.')
                         del urls[0]
                         continue
-        # Open directly if video id given with search enabled
-        elif url.path and re.match(idre, url.path):
-            videoid = url.path
+        # Check if can be the pure video id if search disabled, else skip it.
         elif not args.search and not args.research:
-            logging.info('Could not find a video or channel id' +
-                         ' in the given string')
-            del urls[0]
-            continue
+            if url.path and re.match(idre, url.path):
+                videoid = url.path
+            else:
+                logging.info('Could not find a video or channel id' +
+                             ' in the given string')
+                del urls[0]
+                continue
         # If the url given is not a youtube ID is a search query:
         if videoid:
             apitype = 'videos'
@@ -1038,7 +1039,7 @@ if __name__ == '__main__':
             for item in items:
                 snippet = item['snippet']
                 title = snippet['title'].replace('"', "\'")[:columns - 4:]
-                videoids.append(item['id']['videoId'])
+                videoids.append('//youtu.be/' + item['id']['videoId'])
                 # logging.debug('Title: %s' % title)
                 channeltitle = snippet["channelTitle"]
                 description = snippet['description'][:columns - 24:] + '...'
@@ -1090,8 +1091,9 @@ if __name__ == '__main__':
                 item = items[0]
             # title += ' - ' + channeltitle
             if not videoid:
-                videoid = item['id']['videoId']
+                videoid = '//youtu.be/' + item['id']['videoId']
         logging.info('#'*min(columns, 80))
+        videoid = videoid[-11:]
         logging.info('Fetching data for Video ID: %s' % videoid)
         # Get video metada:
         mediadata = get_mediadata(session, videoid)
