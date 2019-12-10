@@ -148,7 +148,7 @@ def get_quality_ids(mediadata, Bandwidths):
     return (aid, vid)
 
 
-def get_mediadata(curlobj, videoid):
+def get_mediadata(curlobj, videoid, test):
     # https://www.youtube.com/oembed?url=[Youtubewatchurl]&format=json
     url = 'https://www.youtube.com/get_video_info?video_id=' + videoid
     logging.debug('Opening URL: %s ' % url)
@@ -299,8 +299,10 @@ def get_mediadata(curlobj, videoid):
         manifesturl += '/keepalive/yes'
         logging.debug("Manifest URL: %s" % manifesturl)
         curlobj.setopt(pycurl.URL, manifesturl)
-        curlobj.setopt(pycurl.ACCEPT_ENCODING, 'gzip, deflate')
+        curlobj.setopt(pycurl.ACCEPT_ENCODING, '')
+        stime = time.time()
         rawmanifest = curlobj.perform_rs()
+        logging.debug('Manifest download time: ' + str(time.time() - stime))
         curlobj.setopt(pycurl.ACCEPT_ENCODING, None)
         status = curlobj.getinfo(pycurl.RESPONSE_CODE)
         if status != 200:
@@ -346,10 +348,13 @@ def get_mediadata(curlobj, videoid):
         for mtype in audiodata, videodata:
             mtype.sort(key=lambda mid: int(mid.attrib.get('bandwidth', 0)))
         fps_string = 'frameRate'
+        if not otf:
+            testurl = audiodata[1][1].text
     else:
         logging.debug('Dash Manifest URL not available.')
         logging.info('Bandwidth adaptative mode not available.')
         if adaptivefmts:
+            testurl = audiodata[0].get('url')
             logging.debug('Manifestless adaptative formats available.')
             fps_string = 'fps'
             segsecs = 5
@@ -380,13 +385,27 @@ def get_mediadata(curlobj, videoid):
         return 2
     logging.info("Video qualities requested/available: %s/%s " %
                  (len(videodata), totvqua))
+    # Test for url health:
+    if test:
+        logging.debug('Testing URL: ' + testurl)
+        curlobj.setopt(curlobj.URL, testurl)
+        curlobj.setopt(pycurl.RANGE, '%s-%s' % (0, 1024))
+        curlobj.setopt(pycurl.FOLLOWLOCATION, 1)
+        test = curlobj.perform_rb()
+        curlobj.setopt(pycurl.RANGE, None)
+        status = curlobj.getinfo(pycurl.RESPONSE_CODE)
+        if status != 206 and status != 204 and status != 200:
+            logging.info("Error " + str(status) + " testing URL, aborting...")
+            return 2
+        else:
+            logging.debug("The URl seems healthy.")
     return (latencyclass, audiodata, videodata, buffersecs, earliestseqnum,
             startnumber, metadata, segsecs)
 
 
 def ffmuxer(ffmpegbin, ffmuxerstdout, apipe, vpipe):
     ffmpegargs = '%s -y -v %s -nostdin ' % (ffmpegbin, ffloglevel)
-    ffmpegargsinputs = '-blocksize 512 -thread_queue_size 512 -flags +low_delay '
+    ffmpegargsinputs = ' -thread_queue_size 512 -flags +low_delay '
     if apipe:
         ffmpegargs += ffmpegargsinputs + '-i async:pipe:%s ' % apipe
         fds = (apipe, vpipe)
@@ -478,9 +497,10 @@ def get_media(data):
             rawheaders.close()
             print(' ' * columns, end='\r')
             if curlerrnum == 18:
-                logging.debug("Server closed connection with unknown data remaining...")
+                logging.debug('Server closed connection with unknown' +
+                              ' data remaining...')
                 if not curlerr18retries:
-                    logging.debug("Curl error 18 retries exhausted, aborting...")
+                    logging.debug("Curl error 18 retries exhausted, aborting.")
                     fd.close()
                     return 1
                 curlerr18retries -= 1
@@ -599,7 +619,7 @@ def get_media(data):
             logging.debug('Bytes written: %s' % twbytes)
             return info
         else:
-            logging.debug('HTTP error status code: %s' % status)
+            logging.info('HTTP error status code: %s' % status)
             logging.debug("Request's URL: " + url)
             # If retries exhausted or Youtube give a reason of failure, quit:
             if not err4xxr or not errxxxr or reason:
@@ -607,20 +627,25 @@ def get_media(data):
                 fd.close()
                 return 2
             # In Normal latency live videos a segment may not be available yet:
-            if live and status == 404 and int(segmenturl[3:]) > headnumber:
-                logging.debug('Segment not available yet.')
-                logging.debug('Retrying in 1 second')
-                err4xxr -= 1
+            if(live and status == 404 and segmenturl and
+               type(segmenturl) is str and int(segmenturl[3:]) > headnumber):
+                    logging.debug('Segment not available yet.')
+                    logging.debug('Retrying in 1 second')
+                    err4xxr -= 1
             else:
                 # For all http errors refresh data and retry errxxxr times:
+                # Error 503 is less recoverable it seems, so less retries:
+                if status == 503:
+                    logging.info('Service unavailable...')
+                    errxxxr -= 2
                 if live:
-                    logging.info('Http error: ' + str(status) +
-                                 ', refreshing video metadata...')
+                    logging.info('Refreshing video metadata...')
                     curlobj.setopt(pycurl.WRITEDATA, sys.stdout)
-                    metadata = get_mediadata(curlobj, videoid)
+                    metadata = get_mediadata(curlobj, videoid, 0)
                     ended = False
-                    if type(metadata) is int and metadata == 1:
-                        ended = True
+                    if (type(metadata) is int and
+                       (metadata == 1 or metadata == 2)):
+                            ended = True
                     if type(metadata) is tuple:
                         islive = metadata[6].get('isLive')
                         reason = metadata[6].get('reason')
@@ -679,15 +704,17 @@ if __name__ == '__main__':
                                      description='Youtube DASH video playback.')
     parser.add_argument('urls', metavar='URL|QUERY', type=str, nargs='+',
                         help='URLs or search queries of videos to play')
-    parser.add_argument('--version', action='version', version='%(prog)s 0.15-alpha')
+    parser.add_argument('--version', action='version',
+                        version='%(prog)s 0.15-alpha')
     parser.add_argument('-quiet', '-q', action='store_true',
                         help='enable quiet mode (default: %(default)s)')
     parser.add_argument('-search', '-s', action='store_true',
-                        help='search mode, cached results enabled ' +
-                        ' if searched less than 24hs ago, which saves ' +
-                        'YouTube daily quota, recommended) (default: %(default)s)')
+                        help='search mode, results cache enabled if searched' +
+                        ' less than 24hs ago, which saves YouTube daily' +
+                        ' quota, recommended) (default: %(default)s)')
     parser.add_argument('-research', '-rs', action='store_true',
-                        help='Search with cached results disabled. (default: %(default)s)')
+                        help='Search with cached results disabled.' +
+                        ' (default: %(default)s)')
     parser.add_argument('-nonlive', '-nl', action='store_true',
                         help='search also non-live videos ' +
                         '(default: %(default)s)')
@@ -958,12 +985,16 @@ if __name__ == '__main__':
             apipar['maxResults'] = args.maxresults
             apipar['videoEmbeddable'] = 'true'
             apipar['videoSyndicated'] = 'true'
-            searchcachefile = (cachedir + apipar['type'] + '+' +
-                    apipar['videoType'] + '+' + eventype  + '+' +
-                    str(apipar['maxResults']) + '+' + apipar['videoDuration'] +
-                    '+' + apipar['videoDefinition'] + '+' +
-                    apipar['safeSearch'] + '+' + apipar['videoLicense'] + '+' +
-                    str(apipar['order']) + '+')
+            # Create the name of cache file:
+            searchcachefile = (cachedir + apipar['type'] +
+                               '+' + apipar['videoType'] +
+                               '+' + eventype +
+                               '+' + str(apipar['maxResults']) +
+                               '+' + apipar['videoDuration'] +
+                               '+' + apipar['videoDefinition'] +
+                               '+' + apipar['safeSearch'] +
+                               '+' + apipar['videoLicense'] +
+                               '+' + str(apipar['order']) + '+')
             if channelid:
                 apipar['channelId'] = channelid
                 searchcachefile += channelid
@@ -987,7 +1018,7 @@ if __name__ == '__main__':
                 with open(searchcachefile, 'r') as fd:
                     rjson = eval(str(fd.read()))
                 if (lifetime > 24 or args.research or not rjson or
-                    type(rjson) is not dict):
+                   type(rjson) is not dict):
                         research = 1
                 else:
                     research = 0
@@ -1021,7 +1052,7 @@ if __name__ == '__main__':
                 except pycurl.error as err:
                     err = tuple(err.args)
                     if err[0] == 6 or err[0] == 7:
-                        logging.warning("Connection Error, Internet connection down?")
+                        logging.warning("Connection Error, Internet issues?")
                     else:
                         logging.warning("Pycurl Error: %s" % str(err))
                     quit()
@@ -1040,11 +1071,8 @@ if __name__ == '__main__':
                 snippet = item['snippet']
                 title = snippet['title'].replace('"', "\'")[:columns - 4:]
                 videoids.append('//youtu.be/' + item['id']['videoId'])
-                # logging.debug('Title: %s' % title)
                 channeltitle = snippet["channelTitle"]
                 description = snippet['description'][:columns - 24:] + '...'
-                # description = description.replace('"', "\'").replace('\\n', "")
-                # logging.debug('Description: %s' % description)
                 livebroad = snippet['liveBroadcastContent']
                 if livebroad == 'none':
                     livebroad = False
@@ -1096,7 +1124,7 @@ if __name__ == '__main__':
         videoid = videoid[-11:]
         logging.info('Fetching data for Video ID: %s' % videoid)
         # Get video metada:
-        mediadata = get_mediadata(session, videoid)
+        mediadata = get_mediadata(session, videoid, 1)
         if type(mediadata) is int:
             if mediadata == 1:
                 logging.info('Live stream recently ended, retry with a ' +
@@ -1104,6 +1132,8 @@ if __name__ == '__main__':
             elif mediadata == 2:
                 logging.info('Unable to get all the video metadata needed.')
             del urls[0]
+            # Sleep between many failed fast request:
+            time.sleep(0.5)
             continue
         else:
             latencyclass = mediadata[0]
@@ -1137,7 +1167,7 @@ if __name__ == '__main__':
         minsegms = 1
         maxsegms = 1
         analyzedur = 1000000
-        #Player max cache in secs
+        # Player max cache in secs
         cachesecs = 120
         # max player backbuffer to conserve, in Mb
         backcachesize = 50 * 1048576
@@ -1311,10 +1341,10 @@ if __name__ == '__main__':
         # fd4 = os.pipe()
         title = title.replace('"', "\'")
         logging.info('#'*min(columns, 80))
-        logging.info('* Title: %s' % title )
+        logging.info('* Title: %s' % title)
         if not args.nodescription and description:
             description = description.replace('"', "\'")
-            logging.info('* Description: \n%s' % description )
+            logging.info('* Description: \n%s' % description)
             playerargs += (' --osd-playing-msg="%s" ' % description +
                            '--osd-duration=%s ' %
                            min(len(description) * 25, 10000))
@@ -1336,7 +1366,7 @@ if __name__ == '__main__':
             if manifesturl:
                 playerargs += ('--cache-secs=%s ' % cachesecs +
                                '--demuxer-max-back-bytes=%s ' % backcachesize +
-                               '--demuxer-max-bytes=%s ' % cachesize )
+                               '--demuxer-max-bytes=%s ' % cachesize)
         elif args.player == 'vlc':
             playerargs += (' --input-title-format "%s" ' % (title + " - " +
                                                             author) +
@@ -1605,7 +1635,7 @@ if __name__ == '__main__':
                     if expiresecs is not None and expiresecs <= 20:
                         logging.debug('URL Expired %s, refreshing metadata...'
                                       % expiresecs)
-                        metadata = get_mediadata(session, videoid)
+                        metadata = get_mediadata(session, videoid, 0)
                         if metadata == 1 or metadata == 2:
                             break
                         else:
@@ -1637,7 +1667,8 @@ if __name__ == '__main__':
                     truedelayavg = round(sum(truedelays) / len(truedelays), 3)
                 if live or postlivedvr:
                     ssegms = len(segmsresults)
-                delay = round((time.time() - starttime - ffmuxerdelay) / ssegms, 4)
+                delay = round((time.time() - starttime - ffmuxerdelay) / ssegms,
+                              4)
                 delays.append(round(delay, 4))
                 delays = delays[-arraydelayslim:]
                 delayavg = round(sum(delays) / len(delays), 2)
@@ -1700,9 +1731,10 @@ if __name__ == '__main__':
                                          len(lastbands[startid:endid]))
                     bandslastavg = (bandslastavg, round((bandslastavg/8)/1024))
                     print(' ' * columns, end='\r')
-                    ptext = ('\rBandwidth Last Avg/Min: %skB/s' % bandslastavg[1] +
-                             ' / %skB/s ' % minbandlast[1] +
-                             ' - Delay Avg/Last %ss / %ss' % (delayavg, delays[-1]))
+                    ptext = ('\rBandwidth Last Avg/Min: %skB/s' %
+                             bandslastavg[1] + ' / %skB/s ' % minbandlast[1] +
+                             ' - Delay Avg/Last %ss / %ss' %
+                             (delayavg, delays[-1]))
                     print(ptext[0:columns], end='\r', flush=True)
                     bandwidthdown = 0
                     bandwidthup = 0
@@ -1712,7 +1744,8 @@ if __name__ == '__main__':
                     else:
                         sensup = 1
                         if(minbandavg[0] > nextbandwidth[0] * sensup and
-                           ((speed * 8) + minbandavg[0]) / 2 > nextbandwidth[0] * sensup and
+                           ((speed * 8) + minbandavg[0]) / 2 >
+                           nextbandwidth[0] * sensup and
                            minbandlast[0] > nextbandwidth[0] * sensup):
                             bandwidthup = 1
                         logging.debug("Bandwidth UP: %s" % bandwidthup)
@@ -1735,7 +1768,7 @@ if __name__ == '__main__':
                     (segsecs > 2 and delayavg > segsecs and
                      delays[-1] > segsecs))):
                     print(' ' * columns, end='\r')
-                    print('\rDelays detected, switching to lower video quality...'
+                    print('\rDelays detected, reducing video quality...'
                           [0:columns], end='\r')
                     inertia = int(max(round(delayavg / segsecs, 4), 1))
                     vid = int(max(minvid, vid - inertia))
@@ -1802,10 +1835,10 @@ if __name__ == '__main__':
                     while sleepsecs > 0:
                         if player.poll() is not None:
                             raise Ended
-                        partialsecs = min(1,max(round(sleepsecs, 4),0))
+                        partialsecs = min(1, max(round(sleepsecs, 4), 0))
                         sleepsecs -= 1
                         if partialsecs:
-                            logging.debug("Waiting %s sec..." % partialsecs )
+                            logging.debug("Waiting %s sec..." % partialsecs)
                             time.sleep(partialsecs)
             # EXCEPTIONS: -----------------------------------------------------#
             except Ended:
