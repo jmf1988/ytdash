@@ -510,7 +510,8 @@ def get_media(data):
                 logging.debug("Write error and player closed, quitting...")
                 fd.close()
                 return 1
-            elif (curlerrnum == 7 or curlerrnum == 56):
+            # Curlerror 28 is connection timeout, enables download resume:
+            elif curlerrnum == 7 or curlerrnum == 56 or curlerrnum == 28:
                 print('Download interrupted.', end='\r')
                 if not interruptretries:
                     logging.info("Retries after interruption exhausted, " +
