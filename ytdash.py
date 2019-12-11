@@ -280,7 +280,7 @@ def get_mediadata(curlobj, videoid, test):
             return 2
     # logging Details:
     logging.info("Is live: %s" % live)
-    # Return if live videos were requested and search mode enabled:
+    # Abort if live videos were requested, video is not and search mode enabled:
     if not live and not args.nonlive and (args.search or args.research):
         return 1
     logging.info('Views count: ' + viewcount)
@@ -627,9 +627,10 @@ def get_media(data):
                 rawheaders.close()
                 fd.close()
                 return 2
-            # In Normal latency live videos a segment may not be available yet:
-            if(live and status == 404 and segmenturl and
-               type(segmenturl) is str and int(segmenturl[3:]) > headnumber):
+            # In some live videos a segment may not be available yet:
+            if(live and (status == 404 or status == 204) and segmenturl and
+               type(segmenturl) is str and (int(segmenturl[3:]) > headnumber or
+               not sequencenum)):
                     logging.debug('Segment not available yet.')
                     logging.debug('Retrying in 1 second')
                     err4xxr -= 1
@@ -717,7 +718,7 @@ if __name__ == '__main__':
                         help='Search with cached results disabled.' +
                         ' (default: %(default)s)')
     parser.add_argument('-nonlive', '-nl', action='store_true',
-                        help='search also non-live videos ' +
+                        help='search also for non-live videos ' +
                         '(default: %(default)s)')
     parser.add_argument('-sortby', '-sb', type=str, default='relevance',
                         choices=['relevance', 'viewCount', 'videoCount', 'date',
@@ -1159,7 +1160,7 @@ if __name__ == '__main__':
         mediadata = get_mediadata(session, videoid, 1)
         if type(mediadata) is int:
             if mediadata == 1:
-                logging.info('Video is not live.')
+                logging.info('This video is no longer live.')
             elif mediadata == 2:
                 logging.info('Unable to get all the video metadata needed.')
             del urls[0]
