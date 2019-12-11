@@ -280,6 +280,9 @@ def get_mediadata(curlobj, videoid, test):
             return 2
     # logging Details:
     logging.info("Is live: %s" % live)
+    # Return if live videos were requested and search mode enabled:
+    if not live and not args.nonlive and (args.search or args.research):
+        return 1
     logging.info('Views count: ' + viewcount)
     logging.debug('postLiveDVR: ' + str(postlivedvr))
     logging.debug('reason: ' + str(reason))
@@ -308,9 +311,6 @@ def get_mediadata(curlobj, videoid, test):
         if status != 200:
             logging.info("Error getting manifest content...")
             return 2
-        # if reason:
-        if postlivedvr and not args.offset:
-            return 1
         MPD = ET.fromstring(rawmanifest)
         Period = MPD[0]
         SegmentList = MPD[0][0]
@@ -1010,53 +1010,84 @@ if __name__ == '__main__':
             # searchcachefile = ('/tmp/ytdash/' + re.sub('&.*?=', '+',
             #                   urlencode(apiparams)[5:250]) + '.cache')
             # Check if cached search query version if less than 1 day old:
-            rjson = None
+            # rjson = None
             if not os.path.isfile(searchcachefile):
                 research = 1
+                cachedjson = 0
             else:
+                logging.debug('Search query is in cache.')
                 modtime = os.path.getmtime(searchcachefile)
                 lifetime = (time.time() - modtime) / 3600
-                with open(searchcachefile, 'r') as fd:
-                    rjson = eval(str(fd.read()))
-                if (lifetime > 24 or args.research or not rjson or
-                   type(rjson) is not dict):
-                        research = 1
+                try:
+                    with open(searchcachefile, 'r') as fd:
+                        cachedcontent = fd.readlines()[0]
+                    cachedjson = eval(cachedcontent)
+                except:
+                    invalidcontent = 1
                 else:
-                    research = 0
-                    logging.info('Search query is cached, using it.')
+                    invalidcontent = 0
+                    if lifetime > 24 or args.research:
+                        research = 1
+                    elif(len(cachedcontent) < 10 or
+                         cachedcontent[:9] != "{'items':"):
+                            invalidcontent = 1
+                    else:
+                        logging.info('Search query is cached, using it.')
+                        research = 0
+                if invalidcontent:
+                    logging.debug('Invalid cached content, researching...')
+                    research = 1
+                    cachedjson = 0
             if research:
                 try:
-                    session.setopt(pycurl.URL, apiurl)
-                    r = eval(session.perform_rs())
                     logging.debug("API URL: " + apiurl)
+                    session.setopt(pycurl.URL, apiurl)
+                    apires = session.perform_rs()
                     status = session.getinfo(pycurl.RESPONSE_CODE)
-                    if status != 200:
-                        logging.info('API error code: ' + str(status))
-                        reason = r['error']['errors'][0]['reason']
-                        message = r['error']['errors'][0]['message']
-                        logging.info('API reason: ' + reason)
-                        logging.info('API message: ' + message)
-                        if ((reason == 'quotaExceeded' or
-                             reason == 'dailyLimitExceeded') and rjson):
-                                research = 0
-                                logging.info('Using old cached version.')
-                        elif len(args.urls) < 2:
-                            quit()
-                        else:
-                            del urls[0]
-                            continue
-                    elif status == 200:
-                        rjson = r
-                    if rjson.get('items'):
-                        with open(searchcachefile, 'w') as fd:
-                            fd.write(str(rjson))
                 except pycurl.error as err:
                     err = tuple(err.args)
                     if err[0] == 6 or err[0] == 7:
                         logging.warning("Connection Error, Internet issues?")
                     else:
-                        logging.warning("Pycurl Error: %s" % str(err))
+                        logging.warning("Pycurl Error: %s, retry later." %
+                                        str(err))
                     quit()
+                else:
+                    try:
+                        rjson = eval(apires)
+                    except:
+                        logging.info('Error parsing API response.')
+                        rjson = {}
+                    if status == 200:
+                        if type(rjson) is dict and rjson.get('items'):
+                            with open(searchcachefile, 'w') as fd:
+                                fd.write(str(rjson))
+                        elif rjson:
+                            rjson = {}
+                        reason = 0
+                    else:
+                        logging.info('API error code: ' + str(status))
+                        logging.debug('Rjson: ' + str(rjson))
+                        if rjson:
+                            reason = rjson['error']['errors'][0]['reason']
+                            message = rjson['error']['errors'][0]['message']
+                            logging.info('API reason: ' + reason)
+                            logging.info('API message: ' + message)
+                    if ((not rjson or reason == 'quotaExceeded' or
+                       reason == 'dailyLimitExceeded') and
+                       cachedjson):
+                            research = 0
+                            rjson = cachedjson
+                            logging.info('Quota exceeded, using old ' +
+                                         'cached version.')
+                    elif status != 200:
+                        if len(args.urls) < 2:
+                            quit()
+                        else:
+                            del urls[0]
+                            continue
+            else:
+                rjson = cachedjson
             items = rjson.get('items')
             if items:
                 print("Videos found:")
@@ -1128,8 +1159,7 @@ if __name__ == '__main__':
         mediadata = get_mediadata(session, videoid, 1)
         if type(mediadata) is int:
             if mediadata == 1:
-                logging.info('Live stream recently ended, retry with a ' +
-                             'timeoffset to play it.')
+                logging.info('Video is not live.')
             elif mediadata == 2:
                 logging.info('Unable to get all the video metadata needed.')
             del urls[0]
@@ -1217,7 +1247,9 @@ if __name__ == '__main__':
                 cachesecs = segmresynclimit * segsecs
                 backcachesize = 0
                 maxbackbuffersecs = segsecs * defsegoffset
-            elif args.offset:
+            elif args.offset or postlivedvr:
+                if postlivedvr:
+                    offsetnum, offsetunit = 12, "h"
                 # This is for live streams with backbuffer available:
                 offsetnum = int(args.offset[0:-1])
                 offsetunit = args.offset[-1]
