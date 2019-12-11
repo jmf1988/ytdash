@@ -265,7 +265,7 @@ def get_mediadata(curlobj, videoid, test):
         if latencyclass:
             latencyclass = re.findall('(?<=LATENCY_).+', latencyclass)
             metadata['latencyClass'] = latencyclass[0]
-    if not livecontent or not manifesturl:
+    if adaptivefmts and (not livecontent or not manifesturl):
         audiodata = nomanaudiodata
         videodata = nomanvideodata
         cipher = 0
