@@ -630,12 +630,14 @@ def get_media(data):
             # In some live videos a segment may not be available yet:
             if(live and (status == 404 or status == 204) and segmenturl and
                type(segmenturl) is str and (int(segmenturl[3:]) > headnumber or
-               not sequencenum)):
+               not sequencenum) and err4xxr > 1):
                     logging.debug('Segment not available yet.')
                     logging.debug('Retrying in 1 second')
                     err4xxr -= 1
+                    time.sleep(1)
             else:
                 # For all http errors refresh data and retry errxxxr times:
+                time.sleep(segsecs)
                 # Error 503 is less recoverable it seems, so less retries:
                 if status == 503:
                     logging.info('Service unavailable...')
@@ -664,8 +666,6 @@ def get_media(data):
                         fd.close()
                         return 1
                 errxxxr -= 1
-            # Wait 1 seconds to retry the request/s:
-            time.sleep(1)
 
 
 def closepipes(totalpipes):
