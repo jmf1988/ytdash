@@ -758,10 +758,10 @@ if __name__ == '__main__':
                         help='filter results by video livense type ' +
                         '(default: %(default)s)')
     parser.add_argument('-playlist', action='store_true',
-                        help=' Play urls found in file ' +
+                        help='Play all urls/ids found in file(s) ' +
                         '(default: %(default)s)')
     parser.add_argument('-fullscreen', '-fs', action='store_true',
-                        help=' Play urls found in file ' +
+                        help='Start all videos in fullscreen mode ' +
                         '(default: %(default)s)')
     parser.add_argument('-maxresults', '-mr', type=int, default=5,
                         help='search max results (default: %(default)s)')
