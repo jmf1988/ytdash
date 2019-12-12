@@ -24,20 +24,20 @@ That's all.
 
 Usage: 
 <pre>
-usage: ytdash [-h] [--version] [-quiet] [-search] [-nonlive]
+usage: ytdash [-h] [--version] [-quiet] [-search] [-research] [-nonlive]
               [-sortby {relevance,viewCount,videoCount,date,rating,title,rating}]
               [-eventtype {live,upcoming,completed}]
               [-safesearch {moderate,none,strict}]
               [-duration {any,long,medium,short}]
               [-videotype {any,episode,movie}]
               [-type {video,channel,playlist}] [-definition {hd,sd,any}]
-              [-license {creativeCommon,youtube,any}] [-playlist PLAYLIST]
-              [-maxresults MAXRESULTS] [-debug] [-player PLAYER]
-              [-maxfps MAXFPS] [-maxband MAXBAND]
+              [-license {creativeCommon,youtube,any}] [-playlist]
+              [-fullscreen] [-maxresults MAXRESULTS] [-debug] [-player PLAYER]
+              [-nodescription] [-novolnor] [-maxfps MAXFPS] [-maxband MAXBAND]
               [-maxheight {144,240,360,480,720,1080,1440,2160,4320}]
               [-maxwidth {256,426,640,854,1280,1920,2560,3840,7680}]
               [-ffmpeg FFMPEG] [-autoplay] [-reallive] [-fixed]
-              [--offset OFFSET]
+              [-offset OFFSET]
               URL|QUERY [URL|QUERY ...]
 
 Youtube DASH video playback.
@@ -49,8 +49,11 @@ optional arguments:
   -h, --help            show this help message and exit
   --version             show program's version number and exit
   -quiet, -q            enable quiet mode (default: False)
-  -search, -s           search mode (default: False)
-  -nonlive, -nl         search also non-live videos (default: False)
+  -search, -s           search mode, results cache enabled if searched less
+                        than 24hs ago, which saves YouTube daily quota,
+                        recommended) (default: False)
+  -research, -rs        Search with cached results disabled. (default: False)
+  -nonlive, -nl         search also for non-live videos (default: False)
   -sortby {relevance,viewCount,videoCount,date,rating,title,rating}, -sb {relevance,viewCount,videoCount,date,rating,title,rating}
                         sorting order for the search results (default:
                         relevance)
@@ -68,34 +71,39 @@ optional arguments:
                         filter results by video definition (default: any)
   -license {creativeCommon,youtube,any}
                         filter results by video livense type (default: any)
-  -playlist PLAYLIST    Play urls found om filename playlist (default: )
+  -playlist             Play urls found in file (default: False)
+  -fullscreen, -fs      Start all videos in fullscreen mode (default: False)
   -maxresults MAXRESULTS, -mr MAXRESULTS
                         search max results (default: 5)
   -debug, -d            enable debug mode (default: False)
   -player PLAYER, -p PLAYER
                         player bin name, (default: mpv)
+  -nodescription, -nd   Do not show video descriptions on the terminal/player
+                        (default: False)
+  -novolnor, -nv        disable volume normalization for all videos (mpv).
+                        (default: False)
   -maxfps MAXFPS, -mf MAXFPS
                         max video fps to allow (default: 60)
   -maxband MAXBAND, -mb MAXBAND
                         max video bandwidth in kB/s to allow when possible
                         (default: 700)
-  -maxheight MAXHEIGHT, -mh MAXHEIGHT
-                        max video heigth to allow (default: 720)
-  -maxwidth MAXWIDTH, -mw MAXWIDTH
+  -maxheight {144,240,360,480,720,1080,1440,2160,4320}, -mh {144,240,360,480,720,1080,1440,2160,4320}
+                        max video heigth to allow (default: 768)
+  -maxwidth {256,426,640,854,1280,1920,2560,3840,7680}, -mw {256,426,640,854,1280,1920,2560,3840,7680}
                         max video width to allow (default: 1360)
   -ffmpeg FFMPEG, -ff FFMPEG
                         ffmpeg location route (default: ffmpeg)
   -autoplay             Autoplay all results returned by search mode (default:
                         False)
-  -reallive, -r         Enable lowest latency possible on all types of live streams.
-                        (default: False)
+  -reallive, -r         Enables lowest latency possible with all types of live
+                        streams. (default: False)
   -fixed, -f            Play a fixed video quality instead of doing bandwidth
                         adaptive quality change, This is the max set from
                         options (default: False)
   -offset OFFSET, -o OFFSET
-                        Time offset to start to play. (i.e: -o 2h, -o
-                        210m, -offset 3000s, for hours, minutes, seconds
-                        respectively.) (default: )
+                        Time offset from where the playback start,(i.e: -o 2h,
+                        -o 210m, -offset 3000s, for hours, minutes and seconds
+                        respectively.) (default: 3 segments)
 
 </pre>
 Examples:
