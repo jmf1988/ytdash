@@ -711,7 +711,7 @@ if __name__ == '__main__':
     parser.add_argument('urls', metavar='URL|QUERY', type=str, nargs='+',
                         help='URLs or search queries of videos to play')
     parser.add_argument('--version', action='version',
-                        version='%(prog)s 0.15-alpha')
+                        version='%(prog)s 0.16-alpha')
     parser.add_argument('-quiet', '-q', action='store_true',
                         help='enable quiet mode (default: %(default)s)')
     parser.add_argument('-search', '-s', action='store_true',
@@ -871,7 +871,7 @@ if __name__ == '__main__':
                   playerbaseargs)
     # CURL Session:
     session = pycurl.Curl()
-    session.setopt(pycurl.HTTPHEADER, ['User-Agent: ytdash/0.15'])
+    session.setopt(pycurl.HTTPHEADER, ['User-Agent: ytdash/0.16'])
     defsegoffset = 3  # youtube's default segments offset.
     init = None
     ffmpegbase = None
@@ -1106,8 +1106,6 @@ if __name__ == '__main__':
                 print("No videos found.")
                 del urls[0]
                 continue
-            # while True:
-            answer = None
             itemnum = 1
             videoids = []
             for item in items:
@@ -1126,43 +1124,44 @@ if __name__ == '__main__':
                       '    * Channel: %s\n' % channeltitle +
                       '    * Live: %s' % livebroad)
                 itemnum += 1
-            if args.search or args.research:
-                print('Enter the number of the video to play, press '
-                      'Enter to play all in order, "n" to search next ' +
-                      'query if given or "q" to exit.')
-                nextquery = 0
-                while True:
-                    if not args.autoplay:
-                        answer = input()
-                    else:
-                        answer = ''
-                    if(re.match(r'^[0-9]+$', answer) and
-                       0 < int(answer) <= len(items)):
-                        answer = int(answer)
-                    if type(answer) is int:
-                        item = items[answer - 1]
-                        break
-                    elif answer == 'n' or answer == 'N':
-                        nextquery = 1
-                        break
-                    elif answer == 'q' or answer == 'Q':
-                        quit()
-                    elif answer == '':
-                        del urls[0]
-                        urls = videoids + urls
-                        videoid = urls[0]
-                        break
-                    else:
-                        print('Invalid input, only integers from 1 to' +
-                              ' %s are accepted...' % len(items))
-                if nextquery:
+            print('Enter the number(s) of the video(s) to play, separated by ' +
+                  ' commas, in the order you want (i.e: 2,6,1,4), press '
+                  'Enter to play all in current order, "n" to skip this ' +
+                  ' search or "q" to exit.')
+            nextquery = 0
+            while True:
+                videosidssel = []
+                if not args.autoplay:
+                    answer = input().split(',')
+                else:
+                    answer = ['']
+                if len(answer) == 1 and not answer[0]:
+                    videosidssel = videoids
+                else:
+                    for itemnum in answer:
+                        if itemnum == 'n' or itemnum == 'N':
+                            nextquery = 1
+                            break
+                        elif itemnum == 'q' or itemnum == 'Q':
+                            quit()
+                        elif(re.match(r'^[0-9]+$', itemnum) and
+                             int(itemnum[:1]) and int(itemnum) <= len(items)):
+                                videosidssel.append(videoids[int(itemnum) - 1])
+                        else:
+                            print('Invalid input, only integers from 1' +
+                                  ' to ' + str(len(items)) +
+                                  ' separated by commas are accepted...')
+                            break
+                if len(videosidssel) >= len(answer):
                     del urls[0]
-                    continue
-            else:
-                item = items[0]
-            # title += ' - ' + channeltitle
-            if not videoid:
-                videoid = '//youtu.be/' + item['id']['videoId']
+                    urls = videosidssel + urls
+                    videoid = urls[0]
+                    break
+                elif nextquery:
+                    break
+            if nextquery:
+                del urls[0]
+                continue
         logging.info('#'*min(columns, 80))
         videoid = videoid[-11:]
         logging.info('Fetching data for Video ID: %s' % videoid)
