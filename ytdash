@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from threading import active_count as active_threads
@@ -865,6 +865,8 @@ if __name__ == '__main__':
             playerbaseargs += ' --really-quiet=yes '
     elif args.player == 'vlc':
         playerbaseargs = ' --file-caching=5000 '
+        if args.fullscreen:
+            playerbaseargs += ' --fullscreen '
     else:
         playerbaseargs = ' - '
     logging.debug('Player\'s basic command line: ' + args.player +
@@ -1125,8 +1127,8 @@ if __name__ == '__main__':
                       '    * Live: %s' % livebroad)
                 itemnum += 1
             print('Enter the number(s) of the video(s) to play, separated by ' +
-                  ' commas, in the order you want (i.e: 2,6,1,4), press '
-                  'Enter to play all in current order, "n" to skip this ' +
+                  'commas, in the order you want (i.e: 2,6,1,4), press '
+                  'Enter key to play\'em all in current order, "n" to skip this' +
                   ' search or "q" to exit.')
             nextquery = 0
             while True:
@@ -1388,9 +1390,10 @@ if __name__ == '__main__':
         if not args.nodescription and description:
             description = description.replace('"', "\'")
             logging.info('* Description: \n%s' % description)
-            playerargs += (' --osd-playing-msg="%s" ' % description +
-                           '--osd-duration=%s ' %
-                           min(len(description) * 25, 10000))
+            if args.player == 'mpv':
+                playerargs += (' --osd-playing-msg="%s" ' % description +
+                               '--osd-duration=%s ' %
+                               min(len(description) * 25, 10000))
         if args.player == 'mpv':
             playerargs += (' --title="%s" ' % (title + " - " + author) +
                            '--osd-font-size=%s ' % 25 +
