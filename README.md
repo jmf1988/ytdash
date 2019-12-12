@@ -1,6 +1,6 @@
 
 # YTlivedash
-YTlivedash is a python 3 script that allows native performance by using a local player to play youtube live DASH videos without having to lose adaptative video playback, which is more important when streaming live content because there is less buffer available to pull from, to do all this latency improvements are approached with a combination of parallelized https requests, DASH protocol and keep alive connections.
+YTlivedash is a linux command line tool written in python 3 that enables media playing with native performance by using a local player to play youtube live DASH videos without having to lose adaptative video playback, which is more important when streaming live content because there is less buffer available to pull from, to do all this latency improvements are approached with a combination of parallelized https requests, DASH protocol and keep alive connections.
 
 Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5), pycurl(>=7.43.0.2)
 
@@ -109,16 +109,16 @@ optional arguments:
 Examples:
 
 To play a single video with id lrX6ktLg8WQ:
-- ytdash.py "https://www.youtube.com/watch?v=lrX6ktLg8WQ" or
-- ytdash.py "//youtube.com/watch?v=lrX6ktLg8WQ" or
-- ytdash.py "https://youtu.be/lrX6ktLg8WQ" or
-- ytdash.py "lrX6ktLg8WQ"
+- ytdash "https://www.youtube.com/watch?v=lrX6ktLg8WQ" or
+- ytdash "//youtube.com/watch?v=lrX6ktLg8WQ" or
+- ytdash "https://youtu.be/lrX6ktLg8WQ" or
+- ytdash "lrX6ktLg8WQ"
 
 To search a live video in a channel listing the first 10 results to choose or playing if only one live video found:
 
-- ytdash.py "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -maxresults 10
-- ytdash.py "//youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -maxresults 10
-- ytdash.py "https://www.youtube.com/user/skynews" -s -maxresults 10
+- ytdash "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -maxresults 10
+- ytdash "//youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -maxresults 10
+- ytdash "https://www.youtube.com/user/skynews" -s -maxresults 10
 
 are all equivalent.
 
@@ -126,7 +126,7 @@ Extreme example:
 
 To play first 5 videos in a channel one by one with a max height of 720, max FPS of 30, using a max bandwidth of 400 kB/s, with an offset, of -30 minutes and with bandwidth adaptative mode disabled:
 
-- ytdash.py "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -f -maxresults 5 -offset 30m -maxfps 30 -maxheight 720 -maxband 400
+- ytdash "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -f -maxresults 5 -offset 30m -maxfps 30 -maxheight 720 -maxband 400
 
 That will ignore all qualities of the video/s above the first lowest limit reached and play the maximum quality left in fixed mode (the selected quality will be not switched to a lower one even if delays or bandwidth drops are detected.)
 
