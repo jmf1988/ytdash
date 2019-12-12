@@ -280,9 +280,6 @@ def get_mediadata(curlobj, videoid, test):
             return 2
     # logging Details:
     logging.info("Is live: %s" % live)
-    # Abort if live videos were requested, video is not and search mode enabled:
-    if not live and not args.nonlive and (args.search or args.research):
-        return 1
     logging.info('Views count: ' + viewcount)
     logging.debug('postLiveDVR: ' + str(postlivedvr))
     logging.debug('reason: ' + str(reason))
@@ -298,6 +295,13 @@ def get_mediadata(curlobj, videoid, test):
     logging.debug('latencyclass: ' + str(latencyclass))
     logging.debug('live readahead secs: ' + str(liveaheadsecs))
     logging.debug('live readahead chunks: ' + str(liveaheadchunk))
+    # Abort if live videos were requested, video is not and search mode enabled:
+    if not live and not args.nonlive and (args.search or args.research):
+        if livecontent:
+            logging.info('This video stream is no longer live.')
+        else:
+            logging.info('This video is not live content. (-nonlive disabled)')
+        return 1
     if manifesturl:
         manifesturl += '/keepalive/yes'
         logging.debug("Manifest URL: %s" % manifesturl)
@@ -845,9 +849,10 @@ if __name__ == '__main__':
     if not os.path.isdir(cachedir):
         os.makedirs(cachedir)
     if (args.search or args.research) and args.playlist:
-        logging.info('Search mode cannot be used together with playlist mode' +
-                     ' please choose one')
-        quit()
+        logging.info('Search mode together with playlist mode will only ' +
+                     'search in Youtube for videos if channel IDs ' +
+                     'found in given file/s, other normal video ids/urls ' +
+                     'found will be played following -nonlive flag option.')
     if args.player == 'mpv':
         playerbaseargs = ' --input-terminal=no ' 
         #              ' --rebase-start-time=yes'
@@ -880,6 +885,9 @@ if __name__ == '__main__':
     if args.playlist:
         toturls = list()
         for playlist in args.urls:
+            if not os.path.isfile(playlist):
+                logging.info('File ' + playlist + ' not found.')
+                continue
             try:
                 with open(playlist, 'r') as fd:
                     fileurls = fd.read().splitlines()
@@ -892,7 +900,7 @@ if __name__ == '__main__':
                 if fileurls:
                     toturls += fileurls
         if not toturls:
-            logging.info('No urls found in given file/s.')
+            logging.info('0 URLs found.')
             quit()
         else:
             urls = toturls
@@ -939,7 +947,7 @@ if __name__ == '__main__':
                         del urls[0]
                         continue
         # Check if can be the pure video id if search disabled, else skip it.
-        elif not args.search and not args.research:
+        elif (not args.search and not args.research) or args.playlist:
             if url.path and re.match(idre, url.path):
                 videoid = url.path
             else:
@@ -947,8 +955,10 @@ if __name__ == '__main__':
                              ' in the given string')
                 del urls[0]
                 continue
-        # If the url given is not a youtube ID is a search query:
+        # If the url given does not have a youtube ID is a search query:
         if videoid:
+            if args.search or args.research:
+                logging.debug('Video URL given, search not needed.')
             apitype = 'videos'
         else:
             apibaseurl = 'https://www.googleapis.com/youtube/v3/'
@@ -1116,8 +1126,8 @@ if __name__ == '__main__':
                       '    * Channel: %s\n' % channeltitle +
                       '    * Live: %s' % livebroad)
                 itemnum += 1
-            if (args.search or args.research) and len(items) > 1:
-                print('Enter nº of video to play, press '
+            if args.search or args.research:
+                print('Enter the number of the video to play, press '
                       'Enter to play all in order, "n" to search next ' +
                       'query if given or "q" to exit.')
                 nextquery = 0
@@ -1160,7 +1170,7 @@ if __name__ == '__main__':
         mediadata = get_mediadata(session, videoid, 1)
         if type(mediadata) is int:
             if mediadata == 1:
-                logging.info('This video is no longer live.')
+                logging.debug('The video doesn\'t met search criteria.')
             elif mediadata == 2:
                 logging.info('Unable to get all the video metadata needed.')
             del urls[0]
