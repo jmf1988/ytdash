@@ -714,6 +714,9 @@ if __name__ == '__main__':
                         version='%(prog)s 0.16-alpha')
     parser.add_argument('-quiet', '-q', action='store_true',
                         help='enable quiet mode (default: %(default)s)')
+    parser.add_argument('-onlyone', '-oo', action='store_true',
+                        help='Allow only one instance of ytdash to run at once '
+                        '(default: %(default)s)')
     parser.add_argument('-search', '-s', action='store_true',
                         help='search mode, results cache enabled if searched' +
                         ' less than 24hs ago, which saves YouTube daily' +
@@ -817,37 +820,47 @@ if __name__ == '__main__':
     else:
         loglevel = logging.INFO
         ffloglevel = 'fatal'
-    # Files:
+    os.setpgrp()
+    # Check directories used:
     homedir = os.environ['HOME']
+    cachedir = homedir + '/.cache/ytdash/'
+    tempdir = '/tmp/ytdash/'
+    for directory in cachedir, tempdir:
+        if not os.path.isdir(directory):
+            os.mkdir(directory)
+    # Files to use:
     logfile = homedir + '/.ytdash.log'
+    pidfile = tempdir + 'ytdash.pids'  #  % str(os.getpgrp())
+    thispid = os.getpgrp()
+    # Set logging level and log file
     logging.basicConfig(
-        level=loglevel, filename=logfile, filemode="w+",
+        level=loglevel, filename=logfile, filemode="a+",
         format="%(asctime)-15s %(levelname)-8s %(message)s")
     console = logging.StreamHandler()
     console.setLevel(loglevel)
     # add the handler to the root logger
     logging.getLogger('').addHandler(console)
+    ##
     logging.debug('Resolution detected: %s x %s' % (maxwidth, maxheight))
     # Check pid file:
-    if os.path.isfile('/tmp/ytdash/ytdash.pid'):
-        with open('/tmp/ytdash/ytdash.pid', 'r') as fd:
-            prevpid = fd.read()
-            if prevpid:
-                try:
-                    os.killpg(int(prevpid), signal.SIGTERM)
-                    logging.info("Killed existing ytdash instance...")
-                except ProcessLookupError:
-                    logging.debug("Process does not exist...")
-    else:
-        if not os.path.isdir('/tmp/ytdash'):
-            os.mkdir('/tmp/ytdash')
-    os.setpgrp()
-    with open('/tmp/ytdash/ytdash.pid', 'w') as fd:
-        fd.write(str(os.getpgrp()))
-    # Check cache dir exist:
-    cachedir = homedir + '/.cache/ytdash/'
-    if not os.path.isdir(cachedir):
-        os.makedirs(cachedir)
+    if args.onlyone:
+        if os.path.isfile(pidfile):
+            with open(pidfile, 'r') as fd:
+                prevpids = fd.readlines()
+                print('prevpids:' + str(prevpids))
+                for pid in prevpids:
+                    try:
+                        if re.match('^[0-9]+$', pid.strip('\n')):
+                            pid = int(pid)
+                        if type(pid) is int and pid != thispid:
+                            os.killpg(pid, signal.SIGTERM)
+                            logging.info("Killed existing ytdash instance...")
+                    except ProcessLookupError:
+                            logging.debug("Process does not exist...")
+        os.remove(pidfile)
+     # create a unique pidfile:
+    with open(pidfile, 'a') as fd:
+        fd.write(str(os.getpgrp()) + '\n')
     if (args.search or args.research) and args.playlist:
         logging.info('Search mode together with playlist mode will only ' +
                      'search in Youtube for videos if channel IDs ' +
@@ -1916,4 +1929,4 @@ if __name__ == '__main__':
         del urls[0]
     sys.stdout.flush()
     os.closerange(3, 100)
-    os.remove('/tmp/ytdash/ytdash.pid')
+    os.remove(pidfile)
