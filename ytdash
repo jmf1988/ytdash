@@ -850,21 +850,40 @@ if __name__ == '__main__':
     runcmd = re.findall('.*ytdash.*', pslist)
     if len(runcmd) > 1:
         for instancecmd in runcmd:
-            ppid = instancecmd.split()[0]
+            pscolumns = instancecmd.split()
+            ppid = pscolumns[0]
             if re.match('^[0-9]+$', ppid):
                 pid = int(ppid)
                 if thispid != pid:
                     cmdopts = re.findall('ytdash.*', instancecmd)
                     if args.kill:
-                        try:
-                            os.killpg(pid, signal.SIGTERM)
-                            logging.info("Killed existing instance pid: " +
-                                         ppid)
-                        except ProcessLookupError:
-                            logging.debug("Process does not exist...")
+                        if pscolumns[5] == __file__:
+                            killed = 0
+                            for signal in (15,) * 5:
+                                try:
+                                    os.killpg(pid, signal)
+                                    time.sleep(0.1)
+                                except ProcessLookupError:
+                                    logging.info("Instance pid: " +
+                                                 ppid + ' was terminated.')
+                                    killed = 1
+                                    break
+                            if not killed:
+                                logging.info('Other running instances couldn\'t' +
+                                            ' be killed, please do it manually.')
+                                quit()
+                        else:
+                            logging.info('The process pid: ' + ppid + ' has the'
+                                         ' the same name but different path.' +
+                                         ' Not killing it.')
                     else:
-                        if (cmdopts and
-                           re.match('.* (-oo|-onlyone).*', cmdopts[0])):
+                        if cmdopts:
+                            if args.onlyone:
+                                logging.info('Other instance(s) already ' +
+                                             'running, close them manually or' +
+                                             ' enable -kill option')
+                                quit()
+                            elif re.match('.* (-oo|-onlyone).*', cmdopts[0]):
                                 logging.info('Other instance(s) already ' +
                                              'running with one-instance mode ' +
                                              'enabled.')
@@ -874,7 +893,7 @@ if __name__ == '__main__':
                                          '(s) currently running instance(s)')
             else:
                 logging.info('Cannot find pid of currently running ' +
-                             'instance to terminate it, running anyway.')
+                             'instances to terminate them, running anyway.')
     '''# Check pid file:
     if args.onlyone:
         if os.path.isfile(pidfile):
