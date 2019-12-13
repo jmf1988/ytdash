@@ -49,6 +49,9 @@ optional arguments:
   -h, --help            show this help message and exit
   --version             show program's version number and exit
   -quiet, -q            enable quiet mode (default: False)
+  -onlyone, -oo         Allow only one instance of ytdash to run,
+                        if there are many already running, are all terminated.
+                        (default: False)
   -search, -s           search mode, results cache enabled if searched less
                         than 24hs ago, which saves YouTube daily quota,
                         recommended) (default: False)
