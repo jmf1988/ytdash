@@ -715,8 +715,11 @@ if __name__ == '__main__':
     parser.add_argument('-quiet', '-q', action='store_true',
                         help='enable quiet mode (default: %(default)s)')
     parser.add_argument('-onlyone', '-oo', action='store_true',
-                        help='Allow only one instance of ytdash to run at once '
+                        help='Only one instance of ytdash can be running. ' +
                         '(default: %(default)s)')
+    parser.add_argument('-kill', '-k', action='store_true',
+                        help='First terminate all other running instances of ' +
+                        'ytdash. (default: %(default)s)')
     parser.add_argument('-search', '-s', action='store_true',
                         help='search mode, results cache enabled if searched' +
                         ' less than 24hs ago, which saves YouTube daily' +
@@ -830,7 +833,7 @@ if __name__ == '__main__':
             os.mkdir(directory)
     # Files to use:
     logfile = homedir + '/.ytdash.log'
-    pidfile = tempdir + 'ytdash.pids'  #  % str(os.getpgrp())
+    # pidfile = tempdir + 'ytdash.pid'
     thispid = os.getpgrp()
     # Set logging level and log file
     logging.basicConfig(
@@ -842,7 +845,37 @@ if __name__ == '__main__':
     logging.getLogger('').addHandler(console)
     ##
     logging.debug('Resolution detected: %s x %s' % (maxwidth, maxheight))
-    # Check pid file:
+    # Check running processes for another instances:
+    pslist = subprocess.check_output(shlex.split("ps -ax")).decode("utf-8")
+    runcmd = re.findall('.*ytdash.*', pslist)
+    if len(runcmd) > 1:
+        for instancecmd in runcmd:
+            ppid = instancecmd.split()[0]
+            if re.match('^[0-9]+$', ppid):
+                pid = int(ppid)
+                if thispid != pid:
+                    cmdopts = re.findall('ytdash.*', instancecmd)
+                    if args.kill:
+                        try:
+                            os.killpg(pid, signal.SIGTERM)
+                            logging.info("Killed existing instance pid: " +
+                                         ppid)
+                        except ProcessLookupError:
+                            logging.debug("Process does not exist...")
+                    else:
+                        if (cmdopts and
+                           re.match('.* (-oo|-onlyone).*', cmdopts[0])):
+                                logging.info('Other instance(s) already ' +
+                                             'running with one-instance mode ' +
+                                             'enabled.')
+                                quit()
+                        else:
+                            logging.info('Cannot get cmd options of other' +
+                                         '(s) currently running instance(s)')
+            else:
+                logging.info('Cannot find pid of currently running ' +
+                             'instance to terminate it, running anyway.')
+    '''# Check pid file:
     if args.onlyone:
         if os.path.isfile(pidfile):
             with open(pidfile, 'r') as fd:
@@ -860,7 +893,7 @@ if __name__ == '__main__':
         os.remove(pidfile)
      # create a unique pidfile:
     with open(pidfile, 'a') as fd:
-        fd.write(str(os.getpgrp()) + '\n')
+        fd.write(str(os.getpgrp()) + '\n')'''
     if (args.search or args.research) and args.playlist:
         logging.info('Search mode together with playlist mode will only ' +
                      'search in Youtube for videos if channel IDs ' +
@@ -974,7 +1007,7 @@ if __name__ == '__main__':
         if videoid:
             if args.search or args.research:
                 logging.debug('Video URL given, search not needed.')
-            apitype = 'videos'
+            # apitype = 'videos'
         else:
             apibaseurl = 'https://www.googleapis.com/youtube/v3/'
             apipar = {}
@@ -1167,6 +1200,7 @@ if __name__ == '__main__':
                                   ' to ' + str(len(items)) +
                                   ' separated by commas are accepted...')
                             break
+                logging.debug('Video IDs chosen: ' + str(videosidssel))
                 if len(videosidssel) >= len(answer):
                     del urls[0]
                     urls = videosidssel + urls
@@ -1929,4 +1963,4 @@ if __name__ == '__main__':
         del urls[0]
     sys.stdout.flush()
     os.closerange(3, 100)
-    os.remove(pidfile)
+    # os.remove(pidfile)
