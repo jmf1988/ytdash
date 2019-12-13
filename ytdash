@@ -1031,7 +1031,7 @@ if __name__ == '__main__':
             apibaseurl = 'https://www.googleapis.com/youtube/v3/'
             apipar = {}
             apipar['part'] = 'snippet'
-            apipar['key'] = 'AIzaSyAWOONC01ILGs4dh8vnCJDO4trYbFTH4zQ'
+            apipar['key'] = 'AIzaSyD1VPTv-rIH_OtK8Fcwq9cqnvXLQ_YGKPg'
             apiurlchecklive = apibaseurl + 'videos?' + urlencode(apipar)
             if userid:
                 apitype = 'channels'
