@@ -59,44 +59,6 @@ def time_type(string):
     return string
 
 
-def request(url=None, mode='body'):
-    # HEADERS = ['Connection: Keep-Alive', 'Keep-Alive: 300']
-    # rawheaders = BytesIO()
-    # content = BytesIO()
-    headers = 0
-    curlobj = pycurl.Curl()
-    curlobj.setopt(pycurl.VERBOSE, 0)
-    # curlobj.setopt(pycurl.HEADER, 1)
-    # curlobj.setopt(pycurl.ACCEPT_ENCODING, 'gzip, deflate')
-    curlobj.setopt(pycurl.CONNECTTIMEOUT, 10)
-    curlobj.setopt(pycurl.TIMEOUT, 30)
-    # curlobj.setopt(pycurl.TRANSFER_ENCODING, 1)
-    # curlobj.setopt_string(CURLOPT_TCP_FASTOPEN, "1L")
-    # curlobj.setopt(pycurl.RETURN_TRANSFER, True)
-    curlobj.setopt(pycurl.TCP_KEEPALIVE, 1)
-    curlobj.setopt(pycurl.PIPEWAIT, 1)
-    curlobj.setopt(pycurl.BUFFERSIZE, 524288)
-    curlobj.setopt(pycurl.NOSIGNAL, 1)
-    curlobj.setopt(pycurl.HEADER, 0)
-    # curlobj.setopt(pycurl.KEEP_SENDING_ON_ERROR, 1)
-    # curlobj.setopt(pycurl.HTTPHEADER, HEADERS)
-    curlobj.setopt(pycurl.FOLLOWLOCATION, 1)
-    curlobj.setopt(pycurl.CAINFO, certifi.where())
-    # curlobj.setopt(pycurl.NOBODY, 0)
-    if mode == 'head':
-        curlobj.setopt(pycurl.NOBODY, 1)
-    # elif mode == 'body':
-        # content = BytesIO()
-        # curlobj.setopt(curlobj.WRITEDATA, content)
-    # curlobj.setopt(pycurl.HEADERFUNCTION, rawheaders.write)
-    if url:
-        curlobj.set_url(url)
-        body = curlobj.get()
-        status = curlobj.getinfo(pycurl.RESPONSE_CODE)
-        headers = dict_from_bytes(body)
-    return curlobj, headers
-
-
 def dict_from_bytes(byteheaders):
     headers = {}
     byteheaders.seek(0)
@@ -711,7 +673,7 @@ if __name__ == '__main__':
     parser.add_argument('urls', metavar='URL|QUERY', type=str, nargs='+',
                         help='URLs or search queries of videos to play')
     parser.add_argument('--version', action='version',
-                        version='%(prog)s 0.16-alpha')
+                        version='%(prog)s 0.17-alpha')
     parser.add_argument('-quiet', '-q', action='store_true',
                         help='enable quiet mode (default: %(default)s)')
     parser.add_argument('-onlyone', '-oo', action='store_true',
@@ -827,13 +789,10 @@ if __name__ == '__main__':
     # Check directories used:
     homedir = os.environ['HOME']
     cachedir = homedir + '/.cache/ytdash/'
-    tempdir = '/tmp/ytdash/'
-    for directory in cachedir, tempdir:
-        if not os.path.isdir(directory):
-            os.mkdir(directory)
+    if not os.path.isdir(cachedir):
+        os.mkdir(cachedir)
     # Files to use:
     logfile = homedir + '/.ytdash.log'
-    # pidfile = tempdir + 'ytdash.pid'
     thispid = os.getpgrp()
     # Set logging level and log file
     logging.basicConfig(
@@ -937,8 +896,42 @@ if __name__ == '__main__':
     logging.debug('Player\'s basic command line: ' + args.player +
                   playerbaseargs)
     # CURL Session:
-    session = pycurl.Curl()
-    session.setopt(pycurl.HTTPHEADER, ['User-Agent: ytdash/0.16'])
+    session = pycurl.CurlShare()
+    session.setopt(pycurl.SH_SHARE, pycurl.LOCK_DATA_COOKIE)
+    session.setopt(pycurl.SH_SHARE, pycurl.LOCK_DATA_DNS)
+    session.setopt(pycurl.SH_SHARE, pycurl.LOCK_DATA_SSL_SESSION)
+    # session.setopt(pycurl.SH_SHARE, pycurl.LOCK_DATA_CONNECT)
+    segcurlobjs = []
+    for sid in range(3):
+        mediaobjs = []
+        for mid in range(2):
+            curlobj = pycurl.Curl()
+            curlobj.setopt(pycurl.SHARE, session)
+            curlobj.setopt(pycurl.HTTPHEADER, ['User-Agent: ytdash/0.17'])
+            curlobj.setopt(pycurl.VERBOSE, 0)
+            # curlobj.setopt(pycurl.HEADER, 1)
+            # curlobj.setopt(pycurl.ACCEPT_ENCODING, 'gzip, deflate')
+            curlobj.setopt(pycurl.CONNECTTIMEOUT, 10)
+            curlobj.setopt(pycurl.TIMEOUT, 30)
+            # curlobj.setopt(pycurl.TRANSFER_ENCODING, 1)
+            # curlobj.setopt_string(CURLOPT_TCP_FASTOPEN, "1L")
+            # curlobj.setopt(pycurl.RETURN_TRANSFER, True)
+            curlobj.setopt(pycurl.TCP_KEEPALIVE, 1)
+            # curlobj.setopt(pycurl.TCP_KEEPIDLE, 15)
+            # curlobj.setopt(pycurl.TCP_KEEPINTVL, 15)
+            curlobj.setopt(pycurl.PIPEWAIT, 1)
+            curlobj.setopt(pycurl.BUFFERSIZE, 524288)
+            curlobj.setopt(pycurl.NOSIGNAL, 1)
+            # curlobj.setopt(pycurl.HEADER, 0)
+            # curlobj.setopt(pycurl.KEEP_SENDING_ON_ERROR, 1)
+            # curlobj.setopt(pycurl.HTTPHEADER, HEADERS)
+            curlobj.setopt(pycurl.FOLLOWLOCATION, 1)
+            curlobj.setopt(pycurl.CAINFO, certifi.where())
+            mediaobjs.append(curlobj)
+            # if sid == 3:
+            #    break
+        segcurlobjs.append(mediaobjs)
+    curl = segcurlobjs[0][0]
     defsegoffset = 3  # youtube's default segments offset.
     init = None
     ffmpegbase = None
@@ -1037,8 +1030,8 @@ if __name__ == '__main__':
                 apitype = 'channels'
                 apipar['forUsername'] = userid
                 apiurl = apibaseurl + apitype + '?' + urlencode(apipar)
-                session.setopt(pycurl.URL, apiurl)
-                r = session.perform_rb()
+                curl.setopt(pycurl.URL, apiurl)
+                r = curl.perform_rb()
                 channelitems = json.loads(r).get('items')
                 if channelitems:
                     channelid = channelitems[0].get('id')
@@ -1119,9 +1112,9 @@ if __name__ == '__main__':
             if research:
                 try:
                     logging.debug("API URL: " + apiurl)
-                    session.setopt(pycurl.URL, apiurl)
-                    apires = session.perform_rs()
-                    status = session.getinfo(pycurl.RESPONSE_CODE)
+                    curl.setopt(pycurl.URL, apiurl)
+                    apires = curl.perform_rs()
+                    status = curl.getinfo(pycurl.RESPONSE_CODE)
                 except pycurl.error as err:
                     err = tuple(err.args)
                     if err[0] == 6 or err[0] == 7:
@@ -1193,7 +1186,7 @@ if __name__ == '__main__':
                 itemnum += 1
             print('Enter the number(s) of the video(s) to play, separated by ' +
                   'commas, in the order you want (i.e: 2,6,1,4), press '
-                  'Enter key to play\'em all in current order, "n" to skip this' +
+                  'Enter to play\'em all in current order, "n" to skip this' +
                   ' search or "q" to exit.')
             nextquery = 0
             while True:
@@ -1234,7 +1227,7 @@ if __name__ == '__main__':
         videoid = videoid[-11:]
         logging.info('Fetching data for Video ID: %s' % videoid)
         # Get video metada:
-        mediadata = get_mediadata(session, videoid, 1)
+        mediadata = get_mediadata(curl, videoid, 1)
         if type(mediadata) is int:
             if mediadata == 1:
                 logging.debug('The video doesn\'t met search criteria.')
@@ -1381,10 +1374,10 @@ if __name__ == '__main__':
                 initaurl += audiodata[aid][2][0].get('sourceURL')
                 initvurl = videodata[vid][0].text
                 initvurl += videodata[vid][1][0].get('sourceURL')
-                session.setopt(pycurl.URL, initvurl)
-                initv = session.perform_rb()
-                session.setopt(pycurl.URL, initaurl)
-                inita = session.perform_rb()
+                curl.setopt(pycurl.URL, initvurl)
+                initv = curl.perform_rb()
+                curl.setopt(pycurl.URL, initaurl)
+                inita = curl.perform_rb()
                 logging.debug("Media IDs: %s %s" % (aid, vid))
                 logging.debug("Audio Main URL: %s" % initaurl)
                 logging.debug("Video Main URL: %s" % initvurl)
@@ -1540,11 +1533,6 @@ if __name__ == '__main__':
         twbytes = 0
         http_errors = False
         pool = ThreadPoolExecutor(max_workers=2 * maxsegms)
-        segcurlobjs = []
-        for sid in range(maxsegms):
-            acurlobj = request()[0]
-            vcurlobj = request()[0]
-            segcurlobjs.append((vcurlobj, acurlobj))
         while True:
             starttime = time.time()
             columns = os.get_terminal_size().columns
@@ -1747,7 +1735,7 @@ if __name__ == '__main__':
                     if expiresecs is not None and expiresecs <= 20:
                         logging.debug('URL Expired %s, refreshing metadata...'
                                       % expiresecs)
-                        metadata = get_mediadata(session, videoid, 0)
+                        metadata = get_mediadata(curl, videoid, 0)
                         if metadata == 1 or metadata == 2:
                             break
                         else:
@@ -1888,8 +1876,8 @@ if __name__ == '__main__':
                         initvurl = videodata[vid][0].text
                         initvurl += videodata[vid][1][0].get(
                                                             'sourceURL')
-                        session.setopt(pycurl.URL, initvurl)
-                        initv = session.perform_rb()
+                        curl.setopt(pycurl.URL, initvurl)
+                        initv = curl.perform_rb()
                         logging.debug('Initurl' + initvurl)
                     log_(("DOWN", vid, remainsegms, mindelay,
                          ffmuxerdelay, delaytogoup, truedelays,
@@ -1930,8 +1918,8 @@ if __name__ == '__main__':
                         if otf:
                             initvurl = videodata[vid][0].text
                             initvurl += videodata[vid][1][0].get('sourceURL')
-                            session.setopt(pycurl.URL, initvurl)
-                            initv = session.perform_rb()
+                            curl.setopt(pycurl.URL, initvurl)
+                            initv = curl.perform_rb()
                             logging.debug('Initurl' + initvurl)
 
                         log_(("UP", vid, remainsegms, mindelay,
@@ -1971,6 +1959,14 @@ if __name__ == '__main__':
                     closepipes(playerfds)
                 # This has to be after closing players pipes or it hangs:
                 pool.shutdown(wait=True)
+                for curlobjs in segcurlobjs:
+                    for curlobj in curlobjs:
+                        curlobj.setopt(pycurl.NOBODY, 0)
+                        curlobj.setopt(pycurl.HEADER, 0)
+                        curlobj.setopt(pycurl.WRITEDATA, BytesIO())
+                        curlobj.setopt(pycurl.RANGE, None)
+                        curlobj.setopt(pycurl.HEADERFUNCTION, BytesIO().write)
+                        curl.setopt(pycurl.HEADER, 0)
                 if ffmpegbase:
                     ffmpegbase.kill()
                     ffmpegbase.wait()
@@ -1982,4 +1978,3 @@ if __name__ == '__main__':
         del urls[0]
     sys.stdout.flush()
     os.closerange(3, 100)
-    # os.remove(pidfile)
