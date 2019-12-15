@@ -783,16 +783,6 @@ if __name__ == '__main__':
                         ' minutes and seconds respectively.) ' +
                         '(default: 3 segments)')
     args = parser.parse_args()
-    # Logging:
-    if args.debug:
-        loglevel = logging.DEBUG
-        ffloglevel = 'warning'
-    elif args.quiet:
-        loglevel = logging.WARN
-        ffloglevel = 'fatal'
-    else:
-        loglevel = logging.INFO
-        ffloglevel = 'fatal'
     os.setpgrp()
     # Check directories used:
     homedir = os.environ['HOME']
@@ -802,13 +792,30 @@ if __name__ == '__main__':
     # Files to use:
     thispid = os.getpgrp()
     logfile = homedir + '/.ytdash.log'
-    # Set logging level and log file
-    logging.basicConfig(
-        level=loglevel, filename=logfile, filemode="a+",
-        format="%(asctime)-15s %(levelname)-8s %(message)s")
+    ## Logging:
+    if args.debug:
+        loglevel = logging.DEBUG
+        ffloglevel = 'warning'
+    elif args.quiet:
+        loglevel = logging.WARN
+        ffloglevel = 'fatal'
+    else:
+        loglevel = logging.INFO
+        ffloglevel = 'fatal'
+    # Set logging configs:
+    # logging.basicConfig(level=loglevel, filename=logfile, filemode="a+",
+    #                    format="%(asctime)-15s %(levelname)-8s %(message)s")
+    formatter = logging.Formatter('%(asctime)s %(levelname)s %(funcName)s(%(lineno)d) %(message)s')
+    handler = RotatingFileHandler(logfile, mode='a+', maxBytes=5*1024*1024,
+                                  backupCount=2)
+    handler.setFormatter(formatter)
+    handler.setLevel(loglevel)
+    log = logging.getLogger('')
+    log.setLevel(loglevel)
+    log.addHandler(handler)
+    # Set console loglevel:
     console = logging.StreamHandler()
     console.setLevel(loglevel)
-    # add the handler to the root logger
     logging.getLogger('').addHandler(console)
     ##
     logging.debug('Resolution detected: %s x %s' % (maxwidth, maxheight))
