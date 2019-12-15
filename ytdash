@@ -210,9 +210,11 @@ def get_mediadata(curlobj, videoid, test):
                 if mtype[0] == 'audio/mp4' and mtype[1][8:11] == 'mp4':
                     nomanaudiodata.append(adaptivefmts[fid])
                 elif mtype[0] == 'video/mp4' and mtype[1][8:11] == 'avc':
-                    if not streamtype:
-                        streamtype = adaptivefmts[fid].get('type')
-                    nomanvideodata.append(adaptivefmts[fid])
+                    streamtype = adaptivefmts[fid].get('type')
+                    if streamtype != 'FORMAT_STREAM_TYPE_OTF':
+                        nomanvideodata.append(adaptivefmts[fid])
+                    else:
+                        otf = True
             # logging.debug('Videodata: %s' % nomanvideodata)
             if streamtype == 'FORMAT_STREAM_TYPE_OTF':
                 otf = True
@@ -227,7 +229,7 @@ def get_mediadata(curlobj, videoid, test):
         if latencyclass:
             latencyclass = re.findall('(?<=LATENCY_).+', latencyclass)
             metadata['latencyClass'] = latencyclass[0]
-    if adaptivefmts and (not livecontent or not manifesturl):
+    if adaptivefmts and (not livecontent or not manifesturl or otf):
         audiodata = nomanaudiodata
         videodata = nomanvideodata
         cipher = 0
@@ -264,7 +266,7 @@ def get_mediadata(curlobj, videoid, test):
         else:
             logging.info('This video is not live content. (-nonlive disabled)')
         return 1
-    if manifesturl:
+    if manifesturl and not otf:
         manifesturl += '/keepalive/yes'
         logging.debug("Manifest URL: %s" % manifesturl)
         curlobj.setopt(pycurl.URL, manifesturl)
@@ -336,7 +338,7 @@ def get_mediadata(curlobj, videoid, test):
         videofps = int(videodata[idx].get(fps_string, 0))
         videoheight = int(videodata[idx].get('height', 0))
         videowidth = int(videodata[idx].get('width', 0))
-        if livecontent and manifesturl:
+        if livecontent and manifesturl and not otf:
             videoband = int(videodata[idx].attrib.get('bandwidth', 0))
         else:
             videoband = 0
@@ -346,13 +348,15 @@ def get_mediadata(curlobj, videoid, test):
             del videodata[idx]
         else:
             idx += 1
-    if len(videodata) <= 1:
+    if len(videodata) < 1:
         logging.info('No video found with the requested properties.')
         return 2
     logging.info("Video qualities requested/available: %s/%s " %
                  (len(videodata), totvqua))
     # Test for url health:
     if test:
+        if postlivedvr:
+            testurl = testurl + 'sq/' + str(earliestseqnum + 3)
         logging.debug('Testing URL: ' + testurl)
         curlobj.setopt(curlobj.URL, testurl)
         curlobj.setopt(pycurl.RANGE, '%s-%s' % (0, 1024))
@@ -407,6 +411,7 @@ def get_media(data):
     newurl = None
     initbyte = 0
     interrupted = 0
+    ended = False
     reason = None
     if not livecontent or not manifesturl:
         curlobj.setopt(pycurl.TIMEOUT, 120)
@@ -586,13 +591,8 @@ def get_media(data):
             logging.debug('Bytes written: %s' % twbytes)
             return info
         else:
-            logging.info('HTTP error status code: %s' % status)
+            logging.debug('HTTP error status code: %s' % status)
             logging.debug("Request's URL: " + url)
-            # If retries exhausted or Youtube give a reason of failure, quit:
-            if not err4xxr or not errxxxr or reason:
-                rawheaders.close()
-                fd.close()
-                return 2
             # In some live videos a segment may not be available yet:
             if(live and (status == 404 or status == 204) and segmenturl and
                type(segmenturl) is str and (int(segmenturl[3:]) > headnumber or
@@ -612,11 +612,12 @@ def get_media(data):
                     logging.info('Refreshing video metadata...')
                     curlobj.setopt(pycurl.WRITEDATA, sys.stdout)
                     metadata = get_mediadata(curlobj, videoid, 0)
-                    ended = False
-                    if (type(metadata) is int and
-                       (metadata == 1 or metadata == 2)):
+                    if type(metadata) is int:
+                        if metadata == 1:
                             ended = True
-                    if type(metadata) is tuple:
+                        elif metadata == 2:
+                            logging.info("Error refreshing metadata.")
+                    elif type(metadata) is tuple:
                         islive = metadata[6].get('isLive')
                         reason = metadata[6].get('reason')
                         if not islive:
@@ -628,10 +629,17 @@ def get_media(data):
                     del metadata
                     if ended:
                         logging.info("Live event ended...")
-                        rawheaders.close()
-                        fd.close()
-                        return 1
                 errxxxr -= 1
+            # If retries exhausted or Youtube give a reason of failure, quit:
+            if not err4xxr or not errxxxr or reason or ended:
+                rawheaders.close()
+                fd.close()
+            if ended:
+                return 1
+            elif not err4xxr or not errxxxr:
+                return 2
+            elif reason:
+                return 3
 
 
 def closepipes(totalpipes):
@@ -792,8 +800,8 @@ if __name__ == '__main__':
     if not os.path.isdir(cachedir):
         os.mkdir(cachedir)
     # Files to use:
-    logfile = homedir + '/.ytdash.log'
     thispid = os.getpgrp()
+    logfile = homedir + '/.ytdash.log'
     # Set logging level and log file
     logging.basicConfig(
         level=loglevel, filename=logfile, filemode="a+",
@@ -828,8 +836,9 @@ if __name__ == '__main__':
                                     killed = 1
                                     break
                             if not killed:
-                                logging.info('Other running instances couldn\'t' +
-                                            ' be killed, please do it manually.')
+                                logging.info('Other running instances ' +
+                                             'couldn\'t be killed, please do' +
+                                             ' it manually.')
                                 quit()
                         else:
                             logging.info('The process pid: ' + ppid + ' has the'
@@ -1260,8 +1269,10 @@ if __name__ == '__main__':
             livedvr = metadata.get('isLiveDvrEnabled')
             otf = metadata.get('Otf')
             manifesturl = metadata.get('ManifestUrl')
-            # otf = 0
-            # manifesturl = 0
+        # Disable manifested OTF, use the non otf, the adpativefmts urls:
+        if otf:
+            otf = 0
+            manifesturl = 0
         logging.debug("Start number: " + str(startnumber))
         asegoffset = vsegoffset = remainsegms = defsegoffset
         maxaid = len(audiodata) - 1
@@ -1270,7 +1281,7 @@ if __name__ == '__main__':
         maxsegms = 1
         analyzedur = 1000000
         # Player max cache in secs
-        cachesecs = 120
+        cachesecs = 60
         # max player backbuffer to conserve, in Mb
         backcachesize = 50 * 1048576
         # max player backbuffer to conserve, in Mb
@@ -1301,8 +1312,13 @@ if __name__ == '__main__':
             aidu = 1
             minvid = 1
             Bandwidths = [[0], [0], [0], [0]]
-            # Limit backbuffer to youtube's max default in seconds (12h):
-            if not periodstarttime:
+            # Limit backbuffer to youtube's max default in seconds (12h) or use
+            # the number of already generated segments if below back buffer
+            # manifest's limit (timeShiftBufferDepth) or if is a postlivedvr.
+            # The backbuffer in live streams can be above manifest's max
+            # (but always below YouTube max limit), but for postlivedvr
+            # (and otf's?) the max is the manifest's one:
+            if not periodstarttime or postlivedvr:
                 maxbackbuffersecs = segmentsnumber*segsecs
             else:
                 maxbackbuffersecs = min(periodstarttime+buffersecs, 43200)
@@ -1321,9 +1337,10 @@ if __name__ == '__main__':
             elif args.offset or postlivedvr:
                 if postlivedvr:
                     offsetnum, offsetunit = 12, "h"
-                # This is for live streams with backbuffer available:
-                offsetnum = int(args.offset[0:-1])
-                offsetunit = args.offset[-1]
+                else:
+                    # This is for live streams with backbuffer available:
+                    offsetnum = int(args.offset[0:-1])
+                    offsetunit = args.offset[-1]
                 if offsetunit == "h":
                     secs = 3600
                 elif offsetunit == "m":
@@ -1519,8 +1536,6 @@ if __name__ == '__main__':
         arrayheaderslim = int(avgsecs / segsecs) * 2
         basedelayavg = 0
         end = 0
-        # abytes = 1025400
-        # vbytes = 0
         bandwidthup = 0
         bandwidthdown = 0
         ffmuxerdelay = 0
@@ -1528,11 +1543,8 @@ if __name__ == '__main__':
         cachecontrol = 0
         ssegms = 1
         aend = vend = 0
-        # initv = inita = 1
-        # maxsegms = 1
-        twbytes = 0
-        http_errors = False
-        pool = ThreadPoolExecutor(max_workers=2 * maxsegms)
+        http_errors = youtubeissues = False
+        pool = ThreadPoolExecutor(max_workers=2 * defsegoffset)
         while True:
             starttime = time.time()
             columns = os.get_terminal_size().columns
@@ -1552,7 +1564,6 @@ if __name__ == '__main__':
                     if not manifesturl:
                         pipebuffer = 524288  # Same or less than maxbytes
                         segsecs = 5
-                        # print("Audiodata: " + str(audiodata))
                         amainurl = audiodata[aid]['url']
                         vmainurl = videodata[vid]['url']
                         vsegurl = asegurl = ''
@@ -1577,7 +1588,7 @@ if __name__ == '__main__':
                         vmainurl = videodata[vid][0].text
                         if postlivedvr or otf:
                             if asegoffset:
-                                asegurl = audiodata[aid][2][-asegoffset]
+                                asegurl = audiodata[aid][-1][-asegoffset]
                                 asegurl = asegurl.get('media')
                             else:
                                 aend = 1
@@ -1591,6 +1602,7 @@ if __name__ == '__main__':
                                     vsegoffset -= 1
                                 if not aend:
                                     asegoffset -= 1
+                                seqnumber += 1
                             if aend and vend:
                                 raise Ended
                         elif live and initv == 0 == inita:
@@ -1702,15 +1714,19 @@ if __name__ == '__main__':
                             end = True
                         elif result == 2:
                             http_errors = True
+                        elif result == 3:
+                            youtubeissues = True
                     if otf or manifesturl:
                         closepipes(rpipes[pid])
                         pid += 1
                 # Check for errors in For results: ----------------------------#
                 if http_errors:
                     print(' ' * columns, end='\r')
-                    logging.info('Too many http errors, YouTube '
-                                 'server issues?, quitting.')
-                if end or http_errors:
+                    logging.info('Too many http errors, aborting.')
+                if youtubeissues:
+                    print(' ' * columns, end='\r')
+                    logging.info('YouTube server\'s issues, aborting.')
+                if end or http_errors or youtubeissues:
                     raise Ended
                 # Limit Arrays
                 headtimes = headtimes[-arrayheaderslim:]
