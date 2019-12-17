@@ -772,7 +772,7 @@ if __name__ == '__main__':
                         ', 0=lowest, 2=highest. (default: %(default)s)')
     parser.add_argument('-ffmpeg', '-ff', type=str, default='ffmpeg',
                         help='ffmpeg location route (default: %(default)s)')
-    parser.add_argument('-autoplay', action='store_true',
+    parser.add_argument('-autoplay', '-a', action='store_true',
                         help='Autoplay all results returned by search mode ' +
                         '(default: %(default)s)')
     parser.add_argument('-reallive', '-r', action='store_true',
