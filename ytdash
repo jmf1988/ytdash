@@ -1373,7 +1373,7 @@ if __name__ == '__main__':
         else:
             apipe = 0
             vid = int(len(videodata) / 1) - 1
-            aid = -1
+            aid = min(args.audioquality, maxaid)
             minvid = 2
             headnumber = 999
             seqnumber = 0
