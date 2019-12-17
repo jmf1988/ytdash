@@ -20,7 +20,6 @@ import re
 import shlex
 import json
 import argparse
-# import chardet
 try:
     import gi
     gi.require_version('Gdk', '3.0')
@@ -316,7 +315,6 @@ def get_mediadata(curlobj, videoid, test):
         # live Video Representation: 0[BaseURL],1[Segmentlist]
         audiodata = AudioRepresentations
         videodata = VideoRepresentations
-        print('Audiodata: ' + str(audiodata))
         # Sort Audio and Video qualities by bandwidth:
         for mtype in audiodata, videodata:
             mtype.sort(key=lambda mid: int(mid.attrib.get('bandwidth', 0)))
@@ -1279,7 +1277,7 @@ if __name__ == '__main__':
             lengthsecs = metadata['lengthSeconds']
             postlivedvr = metadata.get('isPostLiveDvr')
             livecontent = metadata.get('isLiveContent')  # media is/was live
-            live = metadata.get('isLive')
+            live = metadata.get('isLive', False)
             lowlatency = metadata.get('isLowLatencyLiveStream')
             livedvr = metadata.get('isLiveDvrEnabled')
             otf = metadata.get('Otf')
@@ -1296,7 +1294,7 @@ if __name__ == '__main__':
             if latencyclass[0] == 'ULTRA_LOW':
                 segsecs = 1
                 minsegms = 2
-                maxsegms = 2
+                maxsegms = 3
             elif latencyclass[0] == 'LOW':
                 segsecs = 2
             elif latencyclass[0] == 'NORMAL':
@@ -1313,15 +1311,6 @@ if __name__ == '__main__':
         # max player backbuffer to conserve, in Mb
         cachesize = 50 * 1048576
         # Default terminal logging printing info:
-        logging.info('Views count: ' + viewcount)
-        logging.info("Is live: %s" % live)
-        logging.info('Live mode: %s LATENCY' % latencyclass[0].replace('_',
-                                                                       ' '))
-        logging.info('* Title: %s' % title)
-        logging.info('* Author: %s' % author)
-        logging.info('#'*min(columns, 80))
-        if not args.nodescription and description:
-            logging.info('* Description: \n%s' % description)
         if live or postlivedvr:
             if args.fixed:
                 aid = maxaid
@@ -1347,10 +1336,10 @@ if __name__ == '__main__':
             segmresynclimit = 43200/segsecs
             headnumber = len(audiodata[1][2]) + earliestseqnum
             fromzero = 0
+            forcedlive = 0
             if startnumber > earliestseqnum:
                 # This are forced live streams (without pause button, no offset)
-                logging.info('Live stream type: Forced live')
-                logging.info('Time offsets are disabled for this stream.')
+                forcedlive = 1
                 segmresynclimit = startnumber - earliestseqnum
                 cachesecs = segmresynclimit * segsecs
                 backcachesize = 0
@@ -1380,13 +1369,7 @@ if __name__ == '__main__':
                 # vsegoffset = min(segmresynclimit, vsegoffset, headnumber)
             arraydelayslim = min(max(vsegoffset, 1), defsegoffset)
             seqnumber = int(headnumber - vsegoffset)
-            logging.debug("Segment duration in secs: " + str(segsecs))
-            logging.debug("Back buffer depth in secs: " + str(buffersecs))
-            logging.debug("Earliest seq number: " + str(earliestseqnum))
-            logging.debug('Head Number: %s, ' % headnumber +
-                          'Start Number: %s, ' % startnumber)
-            logging.debug("Audio Main URL: %s" % audiodata[aid][1].text)
-            logging.debug("Video Main URL: %s" % videodata[vid][0].text)
+
         else:
             apipe = 0
             vid = int(len(videodata) / 1) - 1
@@ -1433,6 +1416,28 @@ if __name__ == '__main__':
                     initvurl += '&range=%s-%s' % (rangestart, rangeend)
             '''
             logging.debug('Video segment offset nº: %s' % vsegoffset)
+        # General Logging infos:
+        logging.info('Views count: ' + viewcount)
+        logging.info("Is live: %s" % live)
+        if live:
+            logging.debug("Audio Main URL: %s" % audiodata[aid][1].text)
+            logging.debug("Video Main URL: %s" % videodata[vid][0].text)
+            livemode = ''
+            if forcedlive:
+                livemode += 'FORCED '
+                # logging.info('Time offsets are disabled for this video.')
+            livemode += latencyclass[0].replace('_',' ') + ' LATENCY'
+            logging.info('Live mode: %s'  % livemode)
+        logging.info('* Title: %s' % title)
+        logging.info('* Author: %s' % author)
+        logging.info('#'*min(columns, 80))
+        if not args.nodescription and description:
+            logging.info('* Description: \n%s' % description)
+        logging.debug("Segment duration in secs: " + str(segsecs))
+        logging.debug("Back buffer depth in secs: " + str(buffersecs))
+        logging.debug("Earliest seq number: " + str(earliestseqnum))
+        logging.debug('Head Number: %s, ' % headnumber +
+                      'Start Number: %s, ' % startnumber)
         # While End ---
         if manifesturl:
             ffbaseargs = args.ffmpeg + ' -v %s ' % ffloglevel
