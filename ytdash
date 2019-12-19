@@ -405,9 +405,9 @@ def ffmuxer(ffmpegbin, ffmuxerstdout, apipe, vpipe):
 
 def get_media(data):
     baseurl, segmenturl, fd, curlobj, init = data
-    errxxxr = err4xxr = 3  # Max retries when http errors.
+    errxxxr = err4xxr = 2  # Max retries when http errors.
     interruptretries = -1  # Infinite retry
-    curlerr18retries = 3  # Happens sometimes when streaming ends
+    curlerr18retries = 2  # Happens sometimes when streaming ends
     twbytes = 0
     totallength = 0
     newurl = None
@@ -564,7 +564,7 @@ def get_media(data):
         logging.debug("Total Length: %s" % totallength)
         # Check status codes:
         if status == 200 or status == 206:
-            errxxxr = err4xxr = 3
+            errxxxr = err4xxr = 2
             # redirurl = curlobj.getinfo(pycurl.REDIRECT_URL)
             lasturl = curlobj.getinfo(pycurl.EFFECTIVE_URL)
             if not url == lasturl:
@@ -767,9 +767,10 @@ if __name__ == '__main__':
                                  7680],
                         help='max video width to allow (default: %(default)s)')
     parser.add_argument('-audioquality', '-aq', type=int, default=1,
-                        choices=[0, 1, 2],
-                        help='Fixed audio quality to enable if available' +
-                        ', 0=lowest, 2=highest. (default: %(default)s)')
+                        choices=[0, 1, -1],
+                        help='Audio quality to enable if available' +
+                        ', 0=lowest, 1=medium, -1=highest. ' +
+                        '(default: %(default)s)')
     parser.add_argument('-ffmpeg', '-ff', type=str, default='ffmpeg',
                         help='ffmpeg location route (default: %(default)s)')
     parser.add_argument('-autoplay', '-a', action='store_true',
@@ -1001,7 +1002,7 @@ if __name__ == '__main__':
             urlstartime += 's'
         urlhost = url.hostname
         urlfolders = url.path.split('/')
-        idre = re.compile('^[A-z0-9_-]{11}$')
+        idre = re.compile('^[/]*[A-z0-9_-]{11}$')
         videoid = None
         channelid = None
         userid = None
@@ -1079,22 +1080,23 @@ if __name__ == '__main__':
             apipar['videoEmbeddable'] = 'true'
             apipar['videoSyndicated'] = 'true'
             # Create the name of cache file:
-            searchcachefile = (cachedir + apipar['type'] +
-                               '+' + apipar['videoType'] +
-                               '+' + eventype +
-                               '+' + str(apipar['maxResults']) +
-                               '+' + apipar['videoDuration'] +
-                               '+' + apipar['videoDefinition'] +
-                               '+' + apipar['safeSearch'] +
-                               '+' + apipar['videoLicense'] +
-                               '+' + str(apipar['order']) + '+')
+            cachefilename = (apipar['type'] +
+                             '+' + apipar['videoType'] +
+                             '+' + eventype +
+                             '+' + str(apipar['maxResults']) +
+                             '+' + apipar['videoDuration'] +
+                             '+' + apipar['videoDefinition'] +
+                             '+' + apipar['safeSearch'] +
+                             '+' + apipar['videoLicense'] +
+                             '+' + str(apipar['order']) + '+')
             if channelid:
                 apipar['channelId'] = channelid
-                searchcachefile += channelid
+                cachefilename += channelid
             else:
-                apipar['q'] = urls[0]
-                searchcachefile += apipar['q']
-            searchcachefile += '.cache'
+                apipar['q'] = urls[0].replace('/', '')
+                cachefilename += apipar['q']
+            # Full name with relative filename limited below native max length:
+            searchcachefile = cachedir + cachefilename[0:200] + '.cache'
             apipar['fields'] = ('items(id,snippet/title,snippet/' +
                                 'channelTitle,snippet/description,' +
                                 'snippet/liveBroadcastContent)')
