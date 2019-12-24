@@ -1799,7 +1799,7 @@ if __name__ == '__main__':
                 else:
                     gcheck = 0
                 if gcheck:
-                    if (delayavg > segsecs*1.25 and delays[-1] > segsecs*1.2):
+                    if (delayavg > segsecs+0.5 and delays[-1] > segsecs*1.2):
                         # (delays[-1] > segsecs * 2 or
                         # min(delays) > segsecs+0.3)):
                         down = 1
@@ -1841,12 +1841,12 @@ if __name__ == '__main__':
                                 goup = 1
                     elif lowlatency and not args.offset:
                         for delay in delays:
-                            # delaysok = True
-                            if vid < 1 or round(delay, 1) == segsecs:
+                            if vid < 1 or round(delay, 0) == segsecs:
                                 delaysok = True
                             else:
                                 delaysok = False
                                 break
+                        # delaysok = True
                         logging.debug('Delays Ok: ' + str(delaysok))
                         if ((delaysok and round(delayavg, 2) == segsecs) or
                            ffmuxerdelay > 1):
