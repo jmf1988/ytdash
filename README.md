@@ -1,6 +1,6 @@
 
-# YTlivedash
-YTlivedash is a linux command line tool written in python 3 that enables media playing with native performance by using a local player to play youtube live DASH videos without having to lose adaptative video playback, which is more important when streaming live content because there is less buffer available to pull from, to do all this latency improvements are approached with a combination of parallelized https requests, DASH protocol and keep alive connections.
+# YTdash
+YTdash is a linux command line tool written in python 3 that enables media playing with native performance by using a local player to play youtube live DASH videos without having to lose adaptative video playback, which is more important when streaming live content because there is less buffer available to pull from, to do all this latency improvements are approached with a combination of parallelized https requests, DASH protocol and keep alive connections.
 
 Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5), pycurl(>=7.43.0.2)
 
