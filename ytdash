@@ -1710,19 +1710,19 @@ if __name__ == '__main__':
                     delays.append(round(delay, 4))
                     delays = delays[-arraydelayslim:]
                     delayavg = round(sum(delays) / len(delays), 2)
-                if len(basedelays) > 0:
-                    basedelayavg = round(sum(basedelays) / (
-                                         2 * len(basedelays)), 4)
-                    mindelay = min(min(basedelays) / 2, mindelay)
-                    truedelay = round(delays[-1]-(max(basedelays[-2:])/2),
-                                      3)
-                    truedelays.append(truedelay)
-                    truedelays = truedelays[-arraydelayslim:]
-                    truedelayavg = round(sum(truedelays)/len(truedelays), 3)
-                    # Min latency check:
-                    if mindelay > segsecs * 0.75:
-                        logging.info('Latency to high: %s seconds, ' %
-                                     mindelay + 'playback not realistic')
+                    if len(basedelays) > 1 and delays:
+                        basedelayavg = round(sum(basedelays) / (
+                                             2 * len(basedelays)), 4)
+                        mindelay = min(min(basedelays) / 2, mindelay)
+                        truedelay = round(delays[-1]-(max(basedelays[-2:])/2),
+                                          3)
+                        truedelays.append(truedelay)
+                        truedelays = truedelays[-arraydelayslim:]
+                        truedelayavg = round(sum(truedelays)/len(truedelays), 3)
+                        # Min latency check:
+                        if mindelay > segsecs * 0.75:
+                            logging.info('Latency to high: %s seconds, ' %
+                                         mindelay + 'playback not realistic')
                 threadsc = active_threads()
                 logging.debug("--> DELAY TO UP: %s seconds\n" % delaytogoup +
                               "--> BASEDELAYS: %s seconds\n" % basedelays +
