@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python3.5
 # -*- coding: utf-8 -*-
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from threading import active_count as active_threads
@@ -35,7 +35,7 @@ except ImportError:
 class Writer:
     def __init__(self, file):
         self.file = file
-        
+
     def write(self, data):
         # sys.stderr.write(data)
         if player.poll() is not None:
@@ -45,10 +45,10 @@ class Writer:
             self.file.write(data)
         except BrokenPipeError:
             return 0
-  
+
 
 class Ended(Exception):
-    pass      
+    pass
 
 
 def time_type(string):
@@ -82,23 +82,51 @@ def log_(infos):
                          DELAY AVG: %s
                          CURRENT BAND: %s
                          NEXT BAND: %s
-                         MIN BANDWIDTH AVGS: %s
-                         MIN BANDWIDTH LASTS: %s
-                         BANDWIDTH LASTS AVG: %s
-                         SPEED: %s
                          NEW VIDEO URL: %s''' % infos)
+
+
+def download(curlobj, url, compressed=0, rangebytes=(0, ''), bytesresponse=0):
+    retries = 3
+    status = response = 0
+    curlobj.setopt(pycurl.URL, url)
+    if compressed:
+        curlobj.setopt(pycurl.ACCEPT_ENCODING, '')
+    if (type(rangebytes) is tuple and len(rangebytes) == 2 and
+       rangebytes != (0, '') and rangebytes[1] > rangebytes[0]+1):
+            bytesresponse = 1
+            curlobj.setopt(pycurl.RANGE, '%s-%s' % rangebytes)
+    while retries:
+        try:
+            if bytesresponse:
+                response = curlobj.perform_rb()
+            else:
+                response = curlobj.perform_rs()
+            status = curlobj.getinfo(pycurl.RESPONSE_CODE)
+            curlerrnum = 0
+            break
+        except pycurl.error as error:
+            curlerrnum = error.args[0]
+            retries -= 1
+            time.sleep(1)
+    # if compressed:
+    curlobj.setopt(pycurl.ACCEPT_ENCODING, None)
+    # if rangebytes and rangebytes != (0, ''):
+    curlobj.setopt(pycurl.RANGE, None)
+    if status != 200 and status != 206:
+        logging.fatal('Http Error %s trying to get video info.' % status)
+    if curlerrnum == 6:
+        logging.fatal('Could not resolve host. Internet connection issues?')
+    if not retries:
+        logging.fatal('Retries exhausted trying to open URL: ' + url)
+    return response
 
 
 def get_mediadata(curlobj, videoid, test):
     # https://www.youtube.com/oembed?url=[Youtubewatchurl]&format=json
     url = 'https://www.youtube.com/get_video_info?video_id=' + videoid
     logging.debug('Opening URL: %s ' % url)
-    curlobj.setopt(pycurl.URL, url)
-    videoquery = curlobj.perform_rs()
-    # logging.debug('Video Query: %s ' % videoquery)
-    status = curlobj.getinfo(pycurl.RESPONSE_CODE)
-    if status != 200:
-        logging.fatal('Http Error %s trying to get video info.' % status)
+    videoquery = download(curlobj, url)
+    if not videoquery:
         return 2
     ytdict = parse_qs(videoquery, strict_parsing=False)
     if ytdict:
@@ -135,19 +163,11 @@ def get_mediadata(curlobj, videoid, test):
     else:
         logging.debug('Could not extract player response data...')
         return 2
-    # Player configs json:
-    # ytpjs = re.findall(r'ytplayer.config = ({.*?});', r.text)
-    # if not ytpjs:
-    #    return 1
-    # ytpjson = json.loads(ytpjs[0])
-    # ytpargs = ytpjson['args']
     liveaheadsecs = ytdict.get('live_readahead_seconds')
     liveaheadchunk = ytdict.get('live_chunk_readahead')
     latencyclass = ytdict.get('latency_class')
     livestream = ytdict.get('livestream')
     liveplayback = ytdict.get('live_playback')
-    # lengthsecs = ytpjson['args']['length_seconds']
-    # ytpresp = json.loads(ytpjson['args']['player_response'])
     ytpconfig = ytpresp.get('playerConfig')
     if ytpconfig:
         audioconfig = ytpconfig.get('audioConfig')
@@ -159,6 +179,7 @@ def get_mediadata(curlobj, videoid, test):
     videodetails = ytpresp.get('videoDetails')
     if videodetails:
         metadata.update(videodetails)
+        # print('Metadata: ' + str(metadata))
         title = videodetails.get('title')
         description = videodetails.get('shortDescription')
         author = videodetails.get('author')
@@ -258,19 +279,16 @@ def get_mediadata(curlobj, videoid, test):
         fps_string = 'frameRate'
         manifesturl += '/keepalive/yes'
         logging.debug("Manifest URL: %s" % manifesturl)
-        # Get the Manifest data, compressed enabled:
-        curlobj.setopt(pycurl.URL, manifesturl)
-        curlobj.setopt(pycurl.ACCEPT_ENCODING, '')
+        # Get the Manifest data, compression enabled:
         stime = time.time()
-        rawmanifest = curlobj.perform_rs()
+        rawmanifest = download(curlobj, manifesturl, 1)
         logging.debug('Manifest download time: ' + str(time.time() - stime))
-        curlobj.setopt(pycurl.ACCEPT_ENCODING, None)
-        status = curlobj.getinfo(pycurl.RESPONSE_CODE)
-        if status != 200:
-            logging.info("Error getting manifest content...")
+        if not rawmanifest:
+            logging.info("Unable to obtain manifest content...")
             return 2
         # MPD manifest parsing:
         MPD = ET.fromstring(rawmanifest)
+        del rawmanifest
         Period = MPD[0]
         SegmentList = Period[0]
         # Duration list per each segment:
@@ -288,7 +306,7 @@ def get_mediadata(curlobj, videoid, test):
         # All media qualities for the set codec:
         AudioRepresentations = AdaptationSetAudio[1:]
         VideoRepresentations = AdaptationSetVideo[1:]
-        ## Get some info from mpd key's attributes:
+        # Get some info from mpd key's attributes:
         startnumber = int(SegmentList.attrib.get('startNumber', 0))
         presentationTimeOffset = int(SegmentList.get('presentationTimeOffset',
                                                      0))
@@ -309,10 +327,6 @@ def get_mediadata(curlobj, videoid, test):
             segsecs = round(float(SegmentTimeline[0].get('d')) / timescale)
         metadata['segmentsnumber'] = len(SegmentTimeline)
         # Media Metadata:
-        # audiodata = Period[ida].findall("[@mimeType='audio/mp4']/")[1:]
-        # videodata = Period[idv].findall("[@mimeType='video/mp4']/")[1:]
-        # live Audio Representation: 0[channelconfig],1[BaseURL],2[Segmentlist]
-        # live Video Representation: 0[BaseURL],1[Segmentlist]
         audiodata = AudioRepresentations
         videodata = VideoRepresentations
         # Sort Audio and Video qualities by bandwidth:
@@ -361,13 +375,9 @@ def get_mediadata(curlobj, videoid, test):
             testurl = testurl + 'sq/' + str(earliestseqnum + 3)
         logging.debug('Testing URL: ' + testurl)
         curlobj.setopt(curlobj.URL, testurl)
-        curlobj.setopt(pycurl.RANGE, '%s-%s' % (0, 1024))
-        curlobj.setopt(pycurl.FOLLOWLOCATION, 1)
-        test = curlobj.perform_rb()
-        curlobj.setopt(pycurl.RANGE, None)
-        status = curlobj.getinfo(pycurl.RESPONSE_CODE)
-        if status != 206 and status != 204 and status != 200:
-            logging.info("Error " + str(status) + " testing URL, aborting...")
+        testresp = download(curlobj, testurl, 0, (0, 1024))
+        if not testresp:
+            logging.info("Error testing URL, aborting...")
             return 2
         else:
             logging.debug("The URL seems healthy.")
@@ -412,7 +422,7 @@ def get_media(data):
     totallength = 0
     newurl = None
     initbyte = 0
-    interrupted = 0
+    interrupted = error = 0
     ended = False
     reason = None
     if not livecontent or not manifesturl:
@@ -467,11 +477,13 @@ def get_media(data):
             logging.debug("Pycurl Exception Ocurred: %s Args: %s" %
                           (err, str(err.args)))
             curlerrnum = err.args[0]
+            error = 1
             rawheaders.close()
             print(' ' * columns, end='\r')
             if curlerrnum == 18:
                 logging.debug('Server closed connection with unknown' +
                               ' data remaining...')
+                # (18, 'transfer closed with outstanding read data remaining')
                 if not curlerr18retries:
                     logging.debug("Curl error 18 retries exhausted, aborting.")
                     fd.close()
@@ -484,17 +496,18 @@ def get_media(data):
                 fd.close()
                 return 1
             # Curlerror 28 is connection timeout, enables download resume:
-            elif curlerrnum == 7 or curlerrnum == 56 or curlerrnum == 28:
-                print('Download interrupted.', end='\r')
-                if not interruptretries:
-                    logging.info("Retries after interruption exhausted, " +
-                                 "aborting...")
-                    fd.close()
-                    return 1
-                interruptretries -= 1
-                interrupted = 1
-                time.sleep(1)
-            elif curlerrnum == 6 or curlerrnum == 28:
+            elif(curlerrnum == 7 or curlerrnum == 56 or curlerrnum == 28 or
+                 curlerrnum == 52):
+                    print('Download interrupted.', end='\r')
+                    if not interruptretries:
+                        logging.info("Retries after interruption exhausted, " +
+                                     "aborting...")
+                        fd.close()
+                        return 1
+                    interruptretries -= 1
+                    interrupted = 1
+                    time.sleep(1)
+            elif curlerrnum == 6:
                 print('Could not resolve host or connection timed out,' +
                       'Internet connection issues?, retrying in 1 second...',
                       end='\r')
@@ -533,35 +546,16 @@ def get_media(data):
         speed = curlobj.getinfo(pycurl.SPEED_DOWNLOAD)
         totaltime = curlobj.getinfo(pycurl.TOTAL_TIME)
         conntime = curlobj.getinfo(pycurl.CONNECT_TIME)
-        logging.debug('Connect Delay: %s ' % conntime)
-        print(' ' * columns, end='\r')
-        ptext = ('\rDownload Speed AVG: %s kB/s' % int(speed / 1024) +
-                 ' - Download duration: %s' % totaltime)
-        print(ptext[0:columns], end='\r')
-        logging.debug('Curl speed AVG: -> %s <-' % int(speed / 1024))
         if contenttype == 'video/mp4':
-            bandwidthavg = int(headers.get('X-Bandwidth-Avg', 0))
-            bandwidthest = int(headers.get('X-Bandwidth-Est', 0))
-            bandwidthest2 = int(headers.get('X-Bandwidth-Est2', 0))
-            bandwidthest3 = int(headers.get('X-Bandwidth-Est3', 0))
+            bandwidthavg = int(int(headers.get('X-Bandwidth-Avg', 0))/1024)
+            bandwidthest = int(int(headers.get('X-Bandwidth-Est', 0))/1024)
+            bandwidthest2 = int(int(headers.get('X-Bandwidth-Est2', 0))/1024)
+            bandwidthest3 = int(int(headers.get('X-Bandwidth-Est3', 0))/1024)
+            bandwidths = [bandwidthavg, bandwidthest,
+                          bandwidthest2, bandwidthest3]
         else:
-            bandwidthavg = 0
-            bandwidthest = 0
-            bandwidthest2 = 0
-            bandwidthest3 = 0
+            bandwidths = 0
         status = curlobj.getinfo(pycurl.RESPONSE_CODE)
-        if live or postlivedvr:
-            # logging.debug('HEADERS: %s' % headers)
-            # logging.debug('REQ HEADERS: %s' % reqheaders)
-            # logging.debug("HEADTIMES : %s s %s ms" %
-            #               (headtime, headtimems))
-            logging.debug('Head Number: %s' % headnumber)
-            logging.debug('Sequence Number: %s' % sequencenum)
-            # logging.debug("WALLTIMEMS  : %s" % (walltimems))
-            # logging.debug("SEGMENT LMT: %s" % (segmentlmt))
-            # logging.debug('ACCEPT-RANGES: %s' % acceptranges)
-        logging.debug("Content Length: %s" % contentlength)
-        logging.debug("Total Length: %s" % totallength)
         # Check status codes:
         if status == 200 or status == 206:
             errxxxr = err4xxr = 2
@@ -585,16 +579,15 @@ def get_media(data):
                 # Non-live manifestless directly end it:
                 if not manifesturl:
                     return 1
-            info = (status, basedelay, headnumber, headtimems,
-                    sequencenum, walltimems, segmentlmt, contentlength,
-                    cachecontrol, bandwidthavg, bandwidthest,
-                    bandwidthest2, bandwidthest3, speed,
-                    contenttype, newurl, twbytes)
+            info = (status, basedelay, headnumber, headtimems, sequencenum,
+                    walltimems, segmentlmt, contentlength, cachecontrol,
+                    bandwidths, speed, contenttype, newurl, error)
             logging.debug('Bytes written: %s' % twbytes)
             return info
         else:
             logging.debug('HTTP error status code: %s' % status)
             logging.debug("Request's URL: " + url)
+            error = 1
             # In some live videos a segment may not be available yet:
             if(live and (status == 404 or status == 204) and segmenturl and
                type(segmenturl) is str and (int(segmenturl[3:]) > headnumber or
@@ -633,12 +626,12 @@ def get_media(data):
                         logging.info("Live event ended...")
                 errxxxr -= 1
             # If retries exhausted or Youtube give a reason of failure, quit:
-            if not err4xxr or not errxxxr or reason or ended:
+            if err4xxr < 1 or errxxxr < 1 or reason or ended:
                 rawheaders.close()
                 fd.close()
             if ended:
                 return 1
-            elif not err4xxr or not errxxxr:
+            elif err4xxr < 1 or errxxxr < 1:
                 return 2
             elif reason:
                 return 3
@@ -799,7 +792,7 @@ if __name__ == '__main__':
     # Files to use:
     thispid = os.getpgrp()
     logfile = homedir + '/.ytdash.log'
-    ## Logging:
+    # Logging:
     if args.debug:
         loglevel = logging.DEBUG
         ffloglevel = 'warning'
@@ -825,7 +818,7 @@ if __name__ == '__main__':
     logging.getLogger('').addHandler(console)
     ##
     logging.debug('Resolution detected: %s x %s' % (maxwidth, maxheight))
-    ## Check running processes for another instances:
+    # Check running processes for another instances:
     pslist = subprocess.check_output(shlex.split("ps -ax")).decode("utf-8")
     runcmd = re.findall('.*ytdash.*', pslist)
     if len(runcmd) > 1:
@@ -875,25 +868,6 @@ if __name__ == '__main__':
             else:
                 logging.info('Cannot find pid of currently running ' +
                              'instances to terminate them, running anyway.')
-    '''# Check pid file:
-    if args.onlyone:
-        if os.path.isfile(pidfile):
-            with open(pidfile, 'r') as fd:
-                prevpids = fd.readlines()
-                print('prevpids:' + str(prevpids))
-                for pid in prevpids:
-                    try:
-                        if re.match('^[0-9]+$', pid.strip('\n')):
-                            pid = int(pid)
-                        if type(pid) is int and pid != thispid:
-                            os.killpg(pid, signal.SIGTERM)
-                            logging.info("Killed existing ytdash instance...")
-                    except ProcessLookupError:
-                            logging.debug("Process does not exist...")
-        os.remove(pidfile)
-     # create a unique pidfile:
-    with open(pidfile, 'a') as fd:
-        fd.write(str(os.getpgrp()) + '\n')'''
     if (args.search or args.research) and args.playlist:
         logging.info('Search mode together with playlist mode will only ' +
                      'search in Youtube for videos if channel IDs ' +
@@ -931,8 +905,6 @@ if __name__ == '__main__':
             curlobj.setopt(pycurl.SHARE, session)
             curlobj.setopt(pycurl.HTTPHEADER, ['User-Agent: ytdash/0.17'])
             curlobj.setopt(pycurl.VERBOSE, 0)
-            # curlobj.setopt(pycurl.HEADER, 1)
-            # curlobj.setopt(pycurl.ACCEPT_ENCODING, 'gzip, deflate')
             curlobj.setopt(pycurl.CONNECTTIMEOUT, 10)
             curlobj.setopt(pycurl.TIMEOUT, 30)
             # curlobj.setopt(pycurl.TRANSFER_ENCODING, 1)
@@ -950,8 +922,6 @@ if __name__ == '__main__':
             curlobj.setopt(pycurl.FOLLOWLOCATION, 1)
             curlobj.setopt(pycurl.CAINFO, certifi.where())
             mediaobjs.append(curlobj)
-            # if sid == 3:
-            #    break
         segcurlobjs.append(mediaobjs)
     curl = segcurlobjs[0][0]
     defsegoffset = 3  # youtube's default segments offset.
@@ -1052,8 +1022,9 @@ if __name__ == '__main__':
                 apitype = 'channels'
                 apipar['forUsername'] = userid
                 apiurl = apibaseurl + apitype + '?' + urlencode(apipar)
-                curl.setopt(pycurl.URL, apiurl)
-                r = curl.perform_rb()
+                # curl.setopt(pycurl.URL, apiurl)
+                # r = curl.perform_rb()
+                r = download(curl, apiurl, 0, 0, 1)
                 channelitems = json.loads(r).get('items')
                 if channelitems:
                     channelid = channelitems[0].get('id')
@@ -1101,10 +1072,7 @@ if __name__ == '__main__':
                                 'channelTitle,snippet/description,' +
                                 'snippet/liveBroadcastContent)')
             apiurl = apibaseurl + apitype + '?' + urlencode(apipar)
-            # searchcachefile = ('/tmp/ytdash/' + re.sub('&.*?=', '+',
-            #                   urlencode(apiparams)[5:250]) + '.cache')
             # Check if cached search query version if less than 1 day old:
-            # rjson = None
             if not os.path.isfile(searchcachefile):
                 research = 1
                 cachedjson = 0
@@ -1133,48 +1101,37 @@ if __name__ == '__main__':
                     research = 1
                     cachedjson = 0
             if research:
-                try:
-                    logging.debug("API URL: " + apiurl)
-                    curl.setopt(pycurl.URL, apiurl)
-                    apires = curl.perform_rs()
-                    status = curl.getinfo(pycurl.RESPONSE_CODE)
-                except pycurl.error as err:
-                    err = tuple(err.args)
-                    if err[0] == 6 or err[0] == 7:
-                        logging.warning("Connection Error, Internet issues?")
-                    else:
-                        logging.warning("Pycurl Error: %s, retry later." %
-                                        str(err))
-                    quit()
-                else:
+                logging.debug("API URL: " + apiurl)
+                apires = download(curl, apiurl)
+                # curl.setopt(pycurl.URL, apiurl)
+                # apires = curl.perform_rs()
+                # status = curl.getinfo(pycurl.RESPONSE_CODE)
+                # logging.info('API error code: ' + str(status))
+                rjson = {}
+                reason = 0
+                if apires:
                     try:
                         rjson = eval(apires)
                     except:
                         logging.info('Error parsing API response.')
-                        rjson = {}
-                    if status == 200:
-                        if type(rjson) is dict and rjson.get('items'):
+                    if type(rjson) is dict:
+                        logging.debug('Rjson: ' + str(rjson))
+                        if rjson.get('items'):
                             with open(searchcachefile, 'w') as fd:
                                 fd.write(str(rjson))
-                        elif rjson:
-                            rjson = {}
-                        reason = 0
-                    else:
-                        logging.info('API error code: ' + str(status))
-                        logging.debug('Rjson: ' + str(rjson))
-                        if rjson:
+                        elif rjson.get('error'):
                             reason = rjson['error']['errors'][0]['reason']
                             message = rjson['error']['errors'][0]['message']
-                            logging.info('API reason: ' + reason)
+                            logging.info('API failure reason: ' + reason)
                             logging.info('API message: ' + message)
-                    if ((not rjson or reason == 'quotaExceeded' or
-                       reason == 'dailyLimitExceeded') and
-                       cachedjson):
-                            research = 0
-                            rjson = cachedjson
-                            logging.info('Quota exceeded, using old ' +
-                                         'cached version.')
-                    elif status != 200:
+                    else:
+                        rjson = {}
+                    if (not rjson or reason) and cachedjson:
+                        research = 0
+                        rjson = cachedjson
+                        logging.info('Error getting API results, using old ' +
+                                     'cached version.')
+                    elif not rjson:
                         if len(args.urls) < 2:
                             quit()
                         else:
@@ -1295,12 +1252,12 @@ if __name__ == '__main__':
         if live:
             if latencyclass[0] == 'ULTRA_LOW':
                 segsecs = 1
-                minsegms = 2
-                maxsegms = 3
             elif latencyclass[0] == 'LOW':
                 segsecs = 2
             elif latencyclass[0] == 'NORMAL':
                 segsecs = 5
+                minsegms = 1
+                maxsegms = 1
             if args.reallive:
                 remainsegms = vsegoffset = 0
         maxaid = len(audiodata) - 1
@@ -1319,11 +1276,9 @@ if __name__ == '__main__':
                 vid = maxvid
             else:
                 aid = min(args.audioquality, maxaid)
-                vid = 1
-            inita = 1
-            initv = 1
-            minvid = 1
-            Bandwidths = [[0], [0], [0], [0]]
+                vid = int(maxvid/2)
+            inita = initv = 1
+            minvid = 0
             # Limit backbuffer to youtube's max default in seconds (12h) or use
             # the number of already generated segments if below back buffer
             # manifest's limit (timeShiftBufferDepth) or if is a postlivedvr.
@@ -1404,19 +1359,6 @@ if __name__ == '__main__':
                 logging.debug("Media IDs: %s %s" % (aid, vid))
                 logging.debug("Audio Main URL: %s" % initaurl)
                 logging.debug("Video Main URL: %s" % initvurl)
-            '''
-            else:
-                aid = 0
-                initaurl = audiodata[aid]['url']
-                rangestart = audiodata[aid]['initRange'].get('start')
-                rangeend = audiodata[aid]['indexRange'].get('end')
-                initaurl += '&range=%s-%s' % (rangestart, rangeend)
-                initvurl = videodata[vid]['url']
-                rangestart = videodata[vid]['initRange'].get('start')
-                rangeend = videodata[vid]['indexRange'].get('end')
-                if rangestart:
-                    initvurl += '&range=%s-%s' % (rangestart, rangeend)
-            '''
             logging.debug('Video segment offset nº: %s' % vsegoffset)
         # General Logging infos:
         logging.info('Views count: ' + viewcount)
@@ -1428,8 +1370,8 @@ if __name__ == '__main__':
             if forcedlive:
                 livemode += 'FORCED '
                 # logging.info('Time offsets are disabled for this video.')
-            livemode += latencyclass[0].replace('_',' ') + ' LATENCY'
-            logging.info('Live mode: %s'  % livemode)
+            livemode += latencyclass[0].replace('_', ' ') + ' LATENCY'
+            logging.info('Live mode: %s' % livemode)
         logging.info('* Title: %s' % title)
         logging.info('* Author: %s' % author)
         logging.info('#'*min(columns, 80))
@@ -1531,53 +1473,41 @@ if __name__ == '__main__':
                 logging.info('Could not open the player, check args...')
                 quit()
             playertries += 1
-        '''if not manifesturl:
-            player.wait()
-            continue'''
         if ffmuxerstdout == "player":
             ffmuxerstdout = player.stdin
         elif ffmpegbase and ffmpegbase.poll() is None:
             ffmpegbase.stdout.close()
         # MAIN LOOP: ------------------------------------------------------#
-        delays = [0]
+        audioband = round(int(audiodata[aid].get('bandwidth', 0))/8/1024)
+        arrayheaderslim = int(20/segsecs)*2
+        delaytogoup = max(round(segsecs/2, 3), 1)
+        delays = []
         truedelays = []
-        mindelay = 3600
-        totaldelay = 0.0
-        lastbands = []
         headnumbers = []
         basedelays = []
         headtimes = []
         walltimemss = []
-        speeds = []
-        firstrun = 1
-        avgsecs = 20
-        arrayheaderslim = int(avgsecs / segsecs) * 2
-        basedelayavg = 0
-        end = 0
-        bandwidthup = 0
-        bandwidthdown = 0
-        ffmuxerdelay = 0
-        bandwidthavg = 0
-        cachecontrol = 0
-        ssegms = 1
-        aend = vend = 0
+        bandest = []
+        bandest2 = []
+        bandest3 = []
+        basedelayavg = cachecontrol = aend = vend = end = mindelay = 0
+        segms = firstrun = 1
         http_errors = youtubeissues = False
-        pool = ThreadPoolExecutor(max_workers=2 * defsegoffset)
+        pool = ThreadPoolExecutor(max_workers=2*defsegoffset)
         while True:
             starttime = time.time()
             columns = os.get_terminal_size().columns
             try:
-                sequencenums = []
+                # sequencenums = []
+                segmsresults = []
+                rpipes = []
                 logging.debug('Sequence Number: %s, ' % seqnumber +
                               'Remaining segments: %s' % remainsegms)
-                # Media downloads imapping:
-                segmsresults = []
-                reqs = []
-                rpipes = []
                 if firstrun:
                     numbsegms = 1
                 else:
                     numbsegms = min(max(remainsegms, minsegms), maxsegms)
+                # Media downloads imapping:
                 for sid in range(numbsegms):
                     if not manifesturl:
                         pipebuffer = 524288  # Same or less than maxbytes
@@ -1587,8 +1517,7 @@ if __name__ == '__main__':
                         vsegurl = asegurl = ''
                         rpipes = (apipe, vpipe)
                         fda = os.fdopen(apipe[1], 'wb', pipebuffer)
-                        initv = 0
-                        inita = 0
+                        initv = inita = 0
                     else:
                         pipebuffer = 1024
                         if initv and inita:
@@ -1603,6 +1532,8 @@ if __name__ == '__main__':
                         vpipe = os.pipe()
                         rpipes[sid].append(vpipe[0])
                         amainurl = audiodata[aid][1].text
+                        # logging.debug("Audio Main URL: %s" %
+                        #               audiodata[aid][1].text)
                         vmainurl = videodata[vid][0].text
                         if postlivedvr or otf:
                             if asegoffset:
@@ -1626,41 +1557,15 @@ if __name__ == '__main__':
                         elif live and initv == 0 == inita:
                             asegurl = vsegurl = "sq/%s" % seqnumber
                             seqnumber += 1
-                    logging.debug('Audio segment URL: %s' % str(asegurl))
-                    logging.debug('Video segment URL: %s' % str(vsegurl))
-                    # gargs = [[amainurl, asegurl, fda, inita],
-                    #         [vmainurl, vsegurl, fdv, initv]]
+                    # logging.debug('Audio segment URL: %s' % str(asegurl))
+                    # logging.debug('Video segment URL: %s' % str(vsegurl))
                     fdv = os.fdopen(vpipe[1], 'wb', pipebuffer)
-                    '''acurlobj = segcurlobjs[sid][0][0]
-                    vcurlobj = segcurlobjs[sid][1][0]
-                    aurl = amainurl + asegurl
-                    vurl = vmainurl + vsegurl
-                    acurlobj.setopt(pycurl.URL, aurl)
-                    vcurlobj.setopt(pycurl.URL, vurl)
-                    req = (aurl, segcurlobjs[sid][0][2],
-                           segcurlobjs[sid][0][0])
-                    curlmulti.add_handle(req[2])
-                    reqs.append(req)
-                    req = (vurl, segcurlobjs[sid][1][2],
-                           segcurlobjs[sid][1][0])
-                    curlmulti.add_handle(req[2])
-                    reqs.append(req)
-                    #acurlobj.setopt(pycurl.WRITEDATA, fda)
-                    #vcurlobj.setopt(pycurl.WRITEDATA, fdv)
-                    acurlobj.setopt(pycurl.WRITEFUNCTION,
-                                    segcurlobjs[sid][0][2].write)
-                    vcurlobj.setopt(pycurl.WRITEFUNCTION,
-                                    segcurlobjs[sid][1][2].write)'''
-                    # curlmulti.add_handle(segcurlobjs[sid][1][0])
                     ares = pool.submit(get_media, [amainurl, asegurl,
                                        fda, segcurlobjs[sid][0],
                                        inita])
                     vres = pool.submit(get_media, [vmainurl, vsegurl,
                                        fdv, segcurlobjs[sid][1],
                                        initv])
-                    # athread = Thread(target=, args=('rout',)).start()
-                    # vthread = Thread(target=get_media,
-                    #                  args=('rout',)).start()
                     segmsresults.append((ares, vres))
                 pid = 0
                 for segmresult in segmsresults:
@@ -1668,11 +1573,24 @@ if __name__ == '__main__':
                     if ffmpegmuxer is not None:
                         logging.debug('Waiting ffmpeg muxer...')
                         # Check if player was closed while waiting muxer:
+                        rounds = paused = 0
                         while True:
                             try:
                                 ffmpegmuxer.communicate(timeout=1)
+                                '''if paused:
+                                    # segcurlobjs[pid][0].pause(0)
+                                    # segcurlobjs[pid][1].pause(0)
+                                    logging.debug('Download unpaused.')
+                                    paused = 0'''
                                 break
                             except subprocess.TimeoutExpired:
+                                '''if rounds == 5:
+                                    if not paused:
+                                        paused = 1
+                                    logging.debug('Download paused.')
+                                    # segcurlobjs[pid][0].pause(1)
+                                    # segcurlobjs[pid][1].pause(1)
+                                rounds += 1'''
                                 logging.debug('Checking player...')
                                 if player.poll() is not None:
                                     end = 1
@@ -1699,9 +1617,8 @@ if __name__ == '__main__':
                             (status, basedelay, headnumber,
                              headtimems, sequencenum, walltimems,
                              segmentlmt, contentlength, cachecontrol,
-                             bandwidthavg, bandwidthest, bandwidthest2,
-                             bandwidthest3, speed, contenttype,
-                             newurl, wbytes) = result
+                             bandwidths, speed, contenttype, newurl,
+                             error) = result
                             if headnumber:
                                 headnumbers.append(int(headnumber))
                             if headtimems:
@@ -1710,14 +1627,12 @@ if __name__ == '__main__':
                                 walltimemss.append(int(walltimems))
                             if status == 200 or status == 206:
                                 if contenttype == "video/mp4":
-                                    # vbytes += wbytes
                                     if newurl is not None:
                                         if not manifesturl:
                                             videodata[vid]['url'] = newurl
                                         else:
                                             videodata[vid][0].text = newurl
                                 elif contenttype == "audio/mp4":
-                                    # abytes += wbytes
                                     if newurl is not None:
                                         if not manifesturl:
                                             audiodata[aid]['url'] = newurl
@@ -1725,7 +1640,6 @@ if __name__ == '__main__':
                                             audiodata[aid][1].text = newurl
                                 if basedelay:
                                     basedelays.append(basedelay)
-                                speeds.append(speed)
                                 # if sequencenum:
                                 #    sequencenums.append(sequencenum)
                         elif result == 1:
@@ -1750,6 +1664,7 @@ if __name__ == '__main__':
                 headtimes = headtimes[-arrayheaderslim:]
                 walltimemss = walltimemss[-arrayheaderslim:]
                 headnumbers = headnumbers[-arrayheaderslim:]
+                basedelays = basedelays[-arraydelayslim * 2:]
                 if headnumbers:
                     headnumber = max(headnumbers)
                     if not firstrun:
@@ -1759,6 +1674,7 @@ if __name__ == '__main__':
                         fromzero = 0
                     else:
                         seqnumber = headnumber - vsegoffset
+                        logging.debug('First Segment Offset: %s' % vsegoffset)
                 # Check links expiring time(secs remaining):
                 if cachecontrol:
                     expiresecs = re.search(
@@ -1784,29 +1700,29 @@ if __name__ == '__main__':
                     seqnumber = headnumber - vsegoffset
                     print(' ' * columns, end='\r')
                     logging.info('Resyncing...')
-                # DELAYS: -----------------------------------------------------#
-                # Min latency check:
-                if not firstrun and mindelay > segsecs * 0.75:
-                    logging.info('Min delay to high: %s seconds, ' % mindelay +
-                                 'playback not realistic')
                 firstrun = 0
-                basedelays = basedelays[-arraydelayslim * 2:]
+                # DELAYS: -----------------------------------------------------#
+                # Save total time that took to download all segment(s):
+                if not error:
+                    if live or postlivedvr:
+                        segms = len(segmsresults)
+                    delay = round((time.time()-starttime-ffmuxerdelay)/segms, 4)
+                    delays.append(round(delay, 4))
+                    delays = delays[-arraydelayslim:]
+                    delayavg = round(sum(delays) / len(delays), 2)
                 if len(basedelays) > 0:
                     basedelayavg = round(sum(basedelays) / (
                                          2 * len(basedelays)), 4)
                     mindelay = min(min(basedelays) / 2, mindelay)
-                    truedelay = round(delays[-1] - (max(basedelays[-2:])/2), 3)
+                    truedelay = round(delays[-1]-(max(basedelays[-2:])/2),
+                                      3)
                     truedelays.append(truedelay)
                     truedelays = truedelays[-arraydelayslim:]
-                    truedelayavg = round(sum(truedelays) / len(truedelays), 3)
-                if live or postlivedvr:
-                    ssegms = len(segmsresults)
-                delay = round((time.time() - starttime - ffmuxerdelay) / ssegms,
-                              4)
-                delays.append(round(delay, 4))
-                delays = delays[-arraydelayslim:]
-                delayavg = round(sum(delays) / len(delays), 2)
-                delaytogoup = max(round(segsecs / 3, 3), 1)
+                    truedelayavg = round(sum(truedelays)/len(truedelays), 3)
+                    # Min latency check:
+                    if mindelay > segsecs * 0.75:
+                        logging.info('Latency to high: %s seconds, ' %
+                                     mindelay + 'playback not realistic')
                 threadsc = active_threads()
                 logging.debug("--> DELAY TO UP: %s seconds\n" % delaytogoup +
                               "--> BASEDELAYS: %s seconds\n" % basedelays +
@@ -1816,88 +1732,58 @@ if __name__ == '__main__':
                               "--> DELAY AVG: %s seconds\n" % delayavg +
                               "--> FFMPEG DELAYS: %s\n" % ffmuxerdelay +
                               "--> Threads Count: %s\n" % threadsc)
+                logging.debug('Curl error: ' + str(error))
                 # BANDWIDTHS: -------------------------------------------------#
-                speeds = speeds[-arraydelayslim:]
-                speed = max(speeds)
                 if not args.fixed and (live or postlivedvr):
-                    if bandwidthavg:
-                        Bandwidths[0].append(round(bandwidthavg * 8, 1))
-                    if bandwidthest:
-                        Bandwidths[1].append(round(bandwidthest * 8, 1))
-                    if bandwidthest2:
-                        Bandwidths[2].append(round(bandwidthest2 * 8, 1))
-                    if bandwidthest3:
-                        Bandwidths[3].append(round(bandwidthest3 * 8, 1))
+                    # Append each bandwidth type to its list:
+                    bandest.append(bandwidths[1])
+                    bandest2.append(bandwidths[2])
+                    bandest3.append(bandwidths[3])
                     # Limit subarrays to min segments offset length:
-                    for i in range(len(Bandwidths)):
-                        Bandwidths[i] = Bandwidths[i][-arrayheaderslim:]
-                        BandwidthsAvgs[i] = int(sum(Bandwidths[i]) /
-                                                len(Bandwidths[i]))
-                        lastbands.append(Bandwidths[i][-1])
-                    lastbands = lastbands[-4:]
-                    #
+                    bandest = bandest[-defsegoffset:]
+                    bandest2 = bandest2[-defsegoffset:]
+                    bandest3 = bandest3[-defsegoffset:]
+                    # Set bandwidths averages:
+                    bandestavg = round(sum(bandest)/len(bandest))
+                    bandest2avg = round(sum(bandest2)/len(bandest2))
+                    bandest3avg = round(sum(bandest3)/len(bandest3))
+                    # Get bandwidth needed per close video quality:
                     pvid = max(vid - 1, minvid)
-                    prevbandwidthb = int(
-                                        videodata[pvid].attrib.get('bandwidth'))
-                    selectedbandwidthb = int(
-                                         videodata[vid].attrib.get('bandwidth'))
-                    selectedbandwidth = [selectedbandwidthb + 144000,
-                                         ((selectedbandwidthb + 144000)/8)/1024]
-                    selectedbandwidth[1] = round(selectedbandwidth[1], 1)
                     nvid = min(vid + 1, len(videodata) - 1)
-                    nextbandwidthb = int(
-                                        videodata[nvid].attrib.get('bandwidth'))
-                    nextbandwidth = [nextbandwidthb + 144000,
-                                     ((nextbandwidthb + 144000)/8) / 1024]
-                    nextbandwidth[1] = round(nextbandwidth[1], 1)
-                    # Min values:
-                    if BandwidthsAvgs[0] and int(segsecs) <= 5:
-                        startid = 1
-                        endid = None
-                    else:
-                        startid = 1
-                        endid = None
-                    minband = min(BandwidthsAvgs[startid:endid])
-                    minbandavg = (minband, round((minband/8)/1024))
-                    minbandlast = min(lastbands[startid:endid])
-                    minbandlast = (minbandlast, round((minbandlast/8)/1024))
-                    bandslastavg = round(sum(lastbands[startid:endid]) /
-                                         len(lastbands[startid:endid]))
-                    bandslastavg = (bandslastavg, round((bandslastavg/8)/1024))
-                    print(' ' * columns, end='\r')
-                    ptext = ('\rBandwidth Last Avg/Min: %skB/s' %
-                             bandslastavg[1] + ' / %skB/s ' % minbandlast[1] +
-                             ' - Delay Avg/Last %ss / %ss' %
-                             (delayavg, delays[-1]))
-                    print(ptext[0:columns], end='\r', flush=True)
-                    bandwidthdown = 0
-                    bandwidthup = 0
-                    if(minbandlast[0] <= prevbandwidthb and
-                       minbandlast[0] <= prevbandwidthb):
-                        bandwidthdown = 1
-                    else:
-                        sensup = 1
-                        if(minbandavg[0] > nextbandwidth[0] * sensup and
-                           ((speed * 8) + minbandavg[0]) / 2 >
-                           nextbandwidth[0] * sensup and
-                           minbandlast[0] > nextbandwidth[0] * sensup):
-                            bandwidthup = 1
-                        logging.debug("Bandwidth UP: %s" % bandwidthup)
-                    logging.debug("Bandwidth DOWN: %s" % bandwidthdown)
-                else:
-                    bandwidthup = bandwidthdown = 1
-                bandwidthdown = 1
+                    prevvband = int(videodata[pvid].get('bandwidth', 0))/8/1024
+                    currvband = int(videodata[vid].get('bandwidth', 0))/8/1024
+                    nextvband = int(videodata[nvid].get('bandwidth', 0))/8/1024
+                    prevtband = round(prevvband) + audioband
+                    currtband = round(currvband) + audioband
+                    nexttband = round(nextvband) + audioband
+                    if not args.debug:
+                        print(' ' * columns, end='\r')
+                        ptext = ('\rBandwidth Last/Avg: %skB/s' % bandest2[-1] +
+                                 ' / %skB/s ' % bandest2avg +
+                                 ' - Delay Last/Avg: %ss / %ss' %
+                                 (delays[-1], delayavg))
+                        print(ptext[0:columns], end='\r', flush=True)
+                    logging.debug('X-Bandwidth-Avg: ' + str(bandwidths[0]))
+                    logging.debug('X-Bandwidth-Est: ' + str(bandwidths[1]) +
+                                  ' - AVG: ' + str(bandestavg))
+                    logging.debug('X-Bandwidth-Est2: ' + str(bandwidths[2]) +
+                                  ' - AVG: ' + str(bandest2avg))
+                    logging.debug('X-Bandwidth-Est3: ' + str(bandwidths[3]) +
+                                  ' - AVG: ' + str(bandest3avg))
+                    logging.debug('Prev total band: ' + str(prevtband))
+                    logging.debug('Curr total band: ' + str(currtband))
+                    logging.debug('Next total band: ' + str(nexttband))
+                # Select a quality at first run:
                 if inita and initv:
                     inita = initv = 0
                     if not args.fixed:
                         # Select an audio and video quality:
-                        minband = min(Bandwidths[1:])[-1]
-                        logging.debug("Min bandwidths: %s" % Bandwidths[1:])
-                        audioband = audiodata[aid].get('bandwidth', 0)
+                        minband = bandest3avg
+                        logging.debug("Bandwidth detected: %s" % bandest3avg)
                         logging.debug('Audio bandwidth: %s' % audioband)
                         for idv in range(len(videodata)):
                             manband = videodata[idv].get('bandwidth', 0)
-                            manband = int(manband) + int(audioband)
+                            manband = (int(manband)/8/1024) + int(audioband)
                             vid = idv
                             if manband > minband:
                                 #  or manband / 8 > maxband * 1024
@@ -1906,55 +1792,65 @@ if __name__ == '__main__':
                         logging.debug('AID Selected: %s' % aid)
                         logging.debug('VID Selected: %s' % vid)
                 # CHECK TO GO DOWN: -------------------------------------------#
+                down = 0
                 if(not args.fixed and vid > minvid and ffmuxerdelay < 1 and
-                   bandwidthdown and delays[-1] <= segsecs * len(videodata) and
-                   ((segsecs <= 2 and delayavg > segsecs * 1.2 and
-                     delays[-1] > segsecs * 1.2) or
-                    (segsecs > 2 and delayavg > segsecs and
-                     delays[-1] > segsecs))):
-                    print(' ' * columns, end='\r')
-                    print('\rDelays detected, reducing video quality...'
-                          [0:columns], end='\r')
-                    inertia = int(max(round(delayavg / segsecs, 4), 1))
-                    vid = int(max(minvid, vid - inertia))
-                    if otf:
-                        initvurl = videodata[vid][0].text
-                        initvurl += videodata[vid][1][0].get(
-                                                            'sourceURL')
-                        curl.setopt(pycurl.URL, initvurl)
-                        initv = curl.perform_rb()
-                        logging.debug('Initurl' + initvurl)
-                    log_(("DOWN", vid, remainsegms, mindelay,
-                         ffmuxerdelay, delaytogoup, truedelays,
-                         truedelayavg, basedelays, basedelayavg, delays,
-                         delayavg, selectedbandwidth[1],
-                         nextbandwidth[1], minbandavg[1],
-                         minbandlast[1], bandslastavg[1], speed,
-                         videodata[vid][0].text))
+                   not error and basedelayavg < segsecs):
+                        gcheck = 1
+                else:
+                    gcheck = 0
+                if gcheck:
+                    if (delayavg > segsecs*1.25 and delays[-1] > segsecs*1.2):
+                        # (delays[-1] > segsecs * 2 or
+                        # min(delays) > segsecs+0.3)):
+                        down = 1
+                        print(' ' * columns, end='\r')
+                        print('\rDelays detected, lowering video quality...'
+                              [0:columns], end='\r')
+                        inertia = max(round((delays[-1]/segsecs)-0.15), 1)
+                        vid = int(max(minvid, vid - int(inertia)))
+                        if otf:
+                            initvurl = videodata[vid][0].text
+                            initvurl += videodata[vid][1][0].get('sourceURL')
+                            session.setopt(pycurl.URL, initvurl)
+                            initv = session.perform_rb()
+                            logging.debug('Initurl' + initvurl)
+                        log_(("DOWN", vid, remainsegms, mindelay,
+                             ffmuxerdelay, delaytogoup, truedelays,
+                             truedelayavg, basedelays, basedelayavg, delays,
+                             delayavg, currtband, nexttband,
+                             videodata[vid][0].text))
                 elapsed3 = round(time.time() - starttime, 4)
-                logging.debug("---> Local delay: " + str(elapsed3))
-                # CHECK TO GO UP: ---------------------------------------------#
+                logging.debug("---> TOTAL LOCAL DELAY: " + str(elapsed3))
+                # CHECK TO GO UP: -----------------------------------------#
                 # General check:
-                if(not args.fixed and vid < maxvid and bandwidthup and
-                   basedelayavg < segsecs):
-                    gcheck = True
+                upresist = 1.3  # Higher means more bandwidth needed
+                if(not args.fixed and vid < maxvid and not down and
+                   # ((bandest2[-1] > nexttband * upresist and vid < 3) or
+                   bandest2avg > nexttband*upresist and basedelayavg < segsecs):
+                        gcheck = True
                 else:
                     gcheck = False
-                logging.debug('Global check:' + str(gcheck))
+                logging.debug('GCHECK:' + str(gcheck))
                 # Check per live mode type:
                 if gcheck:
                     goup = 0
-                    if live:
-                        if lowlatency and not args.offset:
-                            if(remainsegms == 0 and
-                               round(delayavg, 1) == segsecs):
+                    if (not lowlatency or postlivedvr or
+                       (lowlatency and args.offset)):
+                            if(delays[0] and delayavg < delaytogoup and
+                               max(delays) < delaytogoup):
                                 goup = 1
-                        elif(delayavg < delaytogoup and delays[0] and
-                             delays[-1] < delaytogoup):
+                    elif lowlatency and not args.offset:
+                        for delay in delays:
+                            # delaysok = True
+                            if vid < 1 or round(delay, 1) == segsecs:
+                                delaysok = True
+                            else:
+                                delaysok = False
+                                break
+                        logging.debug('Delays Ok: ' + str(delaysok))
+                        if ((delaysok and round(delayavg, 2) == segsecs) or
+                           ffmuxerdelay > 1):
                             goup = 1
-                    elif(delayavg < delaytogoup and delays[0] and
-                         delays[-1] < delaytogoup):
-                        goup = 1
                     if goup:
                         print(' ' * columns, end='\r')
                         print('\rSwitching to higher video quality...'
@@ -1963,28 +1859,28 @@ if __name__ == '__main__':
                         if otf:
                             initvurl = videodata[vid][0].text
                             initvurl += videodata[vid][1][0].get('sourceURL')
-                            curl.setopt(pycurl.URL, initvurl)
-                            initv = curl.perform_rb()
+                            session.setopt(pycurl.URL, initvurl)
+                            initv = session.perform_rb()
                             logging.debug('Initurl' + initvurl)
-
                         log_(("UP", vid, remainsegms, mindelay,
                              ffmuxerdelay, delaytogoup, truedelays,
                              truedelayavg, basedelays, basedelayavg, delays,
-                             delayavg, selectedbandwidth[1],
-                             nextbandwidth[1], minbandavg[1],
-                             minbandlast[1], bandslastavg[1], speed,
+                             delayavg, currtband, nexttband,
                              videodata[vid][0].text))
-                if remainsegms <= 0 and not lowlatency and live:
-                    sleepsecs = max(round((segsecs) - delays[-1] + 0.100, 4), 0)
-                    logging.debug("Sleeping %s seconds..." % sleepsecs)
-                    while sleepsecs > 0:
-                        if player.poll() is not None:
-                            raise Ended
-                        partialsecs = min(1, max(round(sleepsecs, 4), 0))
-                        sleepsecs -= 1
-                        if partialsecs:
-                            logging.debug("Waiting %s sec..." % partialsecs)
-                            time.sleep(partialsecs)
+                if live:
+                    if((not lowlatency and remainsegms <= 0)):
+                        # (lowlatency and remainsegms > 10)):
+                        sleepsecs = max(round((segsecs) - delays[-1] + 0.100,
+                                              4), 0)
+                        logging.debug("Sleeping %s seconds..." % sleepsecs)
+                        while sleepsecs > 0:
+                            if player.poll() is not None:
+                                raise Ended
+                            partialsecs = min(1, max(round(sleepsecs, 4), 0))
+                            sleepsecs -= 1
+                            if partialsecs:
+                                logging.debug("Waiting %s sec..." % partialsecs)
+                                time.sleep(partialsecs)
             # EXCEPTIONS: -----------------------------------------------------#
             except Ended:
                 if player.poll() is not None:
