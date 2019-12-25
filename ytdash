@@ -1435,7 +1435,8 @@ if __name__ == '__main__':
                            '--demuxer-seekable-cache=yes ' +
                            '--keep-open ')
             if not args.nodescription and description:
-                playerargs += (' --osd-playing-msg="%s" ' % description +
+                playerargs += (' --osd-playing-msg="%s" ' %
+                               description.replace('\\', "") +
                                '--osd-duration=%s ' %
                                min(len(description) * 25, 10000))
             if urlstartime:
