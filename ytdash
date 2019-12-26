@@ -1,4 +1,4 @@
-#!/usr/bin/python3.5
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from threading import active_count as active_threads
@@ -1044,7 +1044,7 @@ if __name__ == '__main__':
             else:
                 eventype = 'Nonlive'
             apipar['videoDimension'] = '2d'
-            apipar['regionCode'] = 'AR'
+            # apipar['regionCode'] = 'AR'
             apipar['safeSearch'] = args.safesearch
             apipar['videoDuration'] = args.duration
             apipar['videoType'] = args.videotype
