@@ -121,7 +121,7 @@ def download(curlobj, url, compressed=0, rangebytes=(0, ''), bytesresponse=0):
     return response
 
 
-def get_mediadata(curlobj, videoid, test):
+def get_mediadata(curlobj, videoid, test=1, checkiflive=0):
     # https://www.youtube.com/oembed?url=[Youtubewatchurl]&format=json
     url = 'https://www.youtube.com/get_video_info?video_id=' + videoid
     logging.debug('Opening URL: %s ' % url)
@@ -191,6 +191,12 @@ def get_mediadata(curlobj, videoid, test):
         live = videodetails.get('isLive', False)
         lowlatency = videodetails.get('isLowLatencyLiveStream')
         livedvr = videodetails.get('isLiveDvrEnabled')
+    else:
+        logging.debug('No video details data found...')
+        return 2
+    # If only checking live status return quickly:
+    if checkiflive:
+        return (live, reason)
     # Get streaming Data:
     streamingdata = ytpresp.get('streamingData')
     if streamingdata:
@@ -258,12 +264,13 @@ def get_mediadata(curlobj, videoid, test):
     logging.debug('latencyclass: ' + str(latencyclass))
     logging.debug('live readahead secs: ' + str(liveaheadsecs))
     logging.debug('live readahead chunks: ' + str(liveaheadchunk))
-    # Abort if live videos were requested, video is not and search mode enabled:
-    if not live and not args.nonlive and (args.search or args.research):
+    # Abort if live videos were requested, and video is not:
+    if not live and not args.nonlive:
         if livecontent:
             logging.info('This video stream is no longer live.')
         else:
-            logging.info('This video is not live content. (-nonlive disabled)')
+            logging.info('This video is not live content.')
+        logging.info('Pass -nonlive option to enable non-live videos playback.')
         return 1
     # Getting media urls from manifest if available except for OTF type:
     if manifesturl and not otf:
@@ -604,24 +611,21 @@ def get_media(data):
                     logging.info('Service unavailable...')
                     errxxxr -= 2
                 if live:
-                    logging.info('Refreshing video metadata...')
+                    logging.debug('Refreshing video metadata...')
                     curlobj.setopt(pycurl.WRITEDATA, sys.stdout)
-                    metadata = get_mediadata(curlobj, videoid, 0)
-                    if type(metadata) is int:
-                        if metadata == 1:
-                            ended = True
-                        elif metadata == 2:
+                    livecheck = get_mediadata(curlobj, videoid, 0, 1)
+                    if type(livecheck) is int:
+                        if livecheck == 2:
                             logging.info("Error refreshing metadata.")
-                    elif type(metadata) is tuple:
-                        islive = metadata[6].get('isLive')
-                        reason = metadata[6].get('reason')
+                            errxxxr = 0
+                    elif type(livecheck) is tuple:
+                        islive, reason = livecheck[0], livecheck[1]
                         if not islive:
                             ended = True
                         elif reason:
                             logging.info("Youtube's reason: " + reason)
                         else:
                             logging.debug("Live event still live...")
-                    del metadata
                     if ended:
                         logging.info("Live event ended...")
                 errxxxr -= 1
@@ -1114,6 +1118,7 @@ if __name__ == '__main__':
                         rjson = eval(apires)
                     except:
                         logging.info('Error parsing API response.')
+                    del apires
                     if type(rjson) is dict:
                         logging.debug('Rjson: ' + str(rjson))
                         if rjson.get('items'):
@@ -1207,7 +1212,7 @@ if __name__ == '__main__':
         videoid = videoid[-11:]
         logging.info('Fetching data for Video ID: %s' % videoid)
         # Get video metada:
-        mediadata = get_mediadata(curl, videoid, 1)
+        mediadata = get_mediadata(curl, videoid)
         if type(mediadata) is int:
             if mediadata == 1:
                 logging.debug('The video doesn\'t met search criteria.')
@@ -1655,7 +1660,7 @@ if __name__ == '__main__':
                 # Check for errors in For results: ----------------------------#
                 if http_errors:
                     print(' ' * columns, end='\r')
-                    logging.info('Too many http errors, aborting.')
+                    logging.info('Too many errors, aborting.')
                 if youtubeissues:
                     print(' ' * columns, end='\r')
                     logging.info('YouTube server\'s issues, aborting.')
@@ -1678,24 +1683,21 @@ if __name__ == '__main__':
                         logging.debug('First Segment Offset: %s' % vsegoffset)
                 # Check links expiring time(secs remaining):
                 if cachecontrol:
-                    expiresecs = re.search(
-                        'private, max-age=(.*)', cachecontrol)
+                    expiresecs = re.search('private, max-age=(.*)',
+                                           cachecontrol)
                     if expiresecs:
                         expiresecs = int(expiresecs.group(1))
                         logging.debug('URLs expire in %s seconds' % expiresecs)
                     if expiresecs is not None and expiresecs <= 20:
                         logging.debug('URL Expired %s, refreshing metadata...'
                                       % expiresecs)
-                        metadata = get_mediadata(curl, videoid, 0)
-                        if metadata == 1 or metadata == 2:
-                            break
+                        mediadata = get_mediadata(pycurl.Curl(), videoid)
+                        if mediadata == 1 or mediadata == 2:
+                            raise Ended
                         else:
-                            segsecs = metadata[0]
-                            audiodata = metadata[1]
-                            videodata = metadata[2]
-                            buffersecs = metadata[3]
-                            earliestseqnum = metadata[4]
-                            startnumber = metadata[5]
+                            segsecs = mediadata[7]
+                            audiodata = mediadata[1]
+                            videodata = mediadata[2]
                 # Resyncing:
                 if remainsegms > segmresynclimit:
                     seqnumber = headnumber - vsegoffset
@@ -1759,9 +1761,10 @@ if __name__ == '__main__':
                     nexttband = round(nextvband) + audioband
                     if not args.debug:
                         print(' ' * columns, end='\r')
-                        ptext = ('\rBandwidth Last/Avg: %skB/s' % bandest2[-1] +
+                        ptext = ('\rEstimated bandwidth Last/Avg: ' +
+                                 '%skB/s' %bandest2[-1] +
                                  ' / %skB/s ' % bandest2avg +
-                                 ' - Delay Last/Avg: %ss / %ss' %
+                                 ' - Delays Last/Avg: %ss / %ss' %
                                  (delays[-1], delayavg))
                         print(ptext[0:columns], end='\r', flush=True)
                     logging.debug('X-Bandwidth-Avg: ' + str(bandwidths[0]))
@@ -1800,7 +1803,8 @@ if __name__ == '__main__':
                 else:
                     gcheck = 0
                 if gcheck:
-                    if (delayavg > segsecs+0.5 and delays[-1] > segsecs*1.2):
+                    if ((delayavg > segsecs+0.5 and delays[-1] > segsecs+0.5) or
+                       bandest2avg < currtband*1):
                         # (delays[-1] > segsecs * 2 or
                         # min(delays) > segsecs+0.3)):
                         down = 1
@@ -1824,7 +1828,7 @@ if __name__ == '__main__':
                 logging.debug("---> TOTAL LOCAL DELAY: " + str(elapsed3))
                 # CHECK TO GO UP: -----------------------------------------#
                 # General check:
-                upresist = 1.3  # Higher means more bandwidth needed
+                upresist = 1.25  # Higher means more bandwidth needed
                 if(not args.fixed and vid < maxvid and not down and
                    # ((bandest2[-1] > nexttband * upresist and vid < 3) or
                    bandest2avg > nexttband*upresist and basedelayavg < segsecs):
