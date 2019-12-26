@@ -270,7 +270,7 @@ def get_mediadata(curlobj, videoid, test=1, checkiflive=0):
             logging.info('This video stream is no longer live.')
         else:
             logging.info('This video is not live content.')
-        logging.info('Pass -nonlive option to enable non-live videos playback.')
+        logging.info('Pass -nonlive/-nl option to enable non-live videos.')
         return 1
     # Getting media urls from manifest if available except for OTF type:
     if manifesturl and not otf:
@@ -625,9 +625,9 @@ def get_media(data):
                         elif reason:
                             logging.info("Youtube's reason: " + reason)
                         else:
-                            logging.debug("Live event still live...")
+                            logging.debug("Event is still live...")
                     if ended:
-                        logging.info("Live event ended...")
+                        logging.info("Live event ended.")
                 errxxxr -= 1
             # If retries exhausted or Youtube give a reason of failure, quit:
             if err4xxr < 1 or errxxxr < 1 or reason or ended:
@@ -1803,8 +1803,7 @@ if __name__ == '__main__':
                 else:
                     gcheck = 0
                 if gcheck:
-                    if ((delayavg > segsecs+0.5 and delays[-1] > segsecs+0.5) or
-                       bandest2avg < currtband*1):
+                    if ((delayavg > segsecs+0.5 and delays[-1] > segsecs+0.5)):
                         # (delays[-1] > segsecs * 2 or
                         # min(delays) > segsecs+0.3)):
                         down = 1
