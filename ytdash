@@ -114,6 +114,7 @@ def download(curlobj, url, compressed=0, rangebytes=(0, ''), bytesresponse=0):
     curlobj.setopt(pycurl.RANGE, None)
     if status != 200 and status != 206:
         logging.fatal('Http Error %s trying to get video info.' % status)
+        response = 0
     if curlerrnum == 6:
         logging.fatal('Could not resolve host. Internet connection issues?')
     if not retries:
