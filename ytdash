@@ -1254,15 +1254,19 @@ if __name__ == '__main__':
         asegoffset = vsegoffset = remainsegms = defsegoffset
         minsegms = 1
         maxsegms = 1
+        downresist = 1.2
         if live:
             if latencyclass[0] == 'ULTRA_LOW':
                 segsecs = 1
+                minsegms = 2
+                maxsegms = 2
             elif latencyclass[0] == 'LOW':
                 segsecs = 2
             elif latencyclass[0] == 'NORMAL':
                 segsecs = 5
                 minsegms = 1
                 maxsegms = 1
+                downresist = 1
             if args.reallive:
                 remainsegms = vsegoffset = 0
         maxaid = len(audiodata) - 1
@@ -1762,7 +1766,7 @@ if __name__ == '__main__':
                     if not args.debug:
                         print(' ' * columns, end='\r')
                         ptext = ('\rEstimated bandwidth Last/Avg: ' +
-                                 '%skB/s' %bandest2[-1] +
+                                 '%skB/s' % bandest2[-1] +
                                  ' / %skB/s ' % bandest2avg +
                                  ' - Delays Last/Avg: %ss / %ss' %
                                  (delays[-1], delayavg))
@@ -1803,14 +1807,15 @@ if __name__ == '__main__':
                 else:
                     gcheck = 0
                 if gcheck:
-                    if ((delayavg > segsecs+0.5 and delays[-1] > segsecs+0.5)):
+                    if (delayavg > segsecs+downresist and
+                       delays[-1] > segsecs+downresist):
                         # (delays[-1] > segsecs * 2 or
                         # min(delays) > segsecs+0.3)):
                         down = 1
                         print(' ' * columns, end='\r')
                         print('\rDelays detected, lowering video quality...'
                               [0:columns], end='\r')
-                        inertia = max(round((delays[-1]/segsecs)-0.15), 1)
+                        inertia = max(int((delays[-1]/segsecs)), 1)
                         vid = int(max(minvid, vid - int(inertia)))
                         if otf:
                             initvurl = videodata[vid][0].text
