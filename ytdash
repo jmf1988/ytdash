@@ -1807,8 +1807,8 @@ if __name__ == '__main__':
                 else:
                     gcheck = 0
                 if gcheck:
-                    if (delayavg > segsecs+downresist and
-                       delays[-1] > segsecs+downresist):
+                    if (delayavg > segsecs*downresist and
+                       delays[-1] > segsecs*downresist):
                         # (delays[-1] > segsecs * 2 or
                         # min(delays) > segsecs+0.3)):
                         down = 1
