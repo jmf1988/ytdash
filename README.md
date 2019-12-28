@@ -24,7 +24,8 @@ That's all.
 
 Usage: 
 <pre>
-usage: ytdash [-h] [--version] [-quiet] [-search] [-research] [-nonlive]
+usage: ytdash [-h] [--version] [-quiet] [-onlyone] [-kill] [-search]
+              [-research] [-nonlive]
               [-sortby {relevance,viewCount,videoCount,date,rating,title,rating}]
               [-eventtype {live,upcoming,completed}]
               [-safesearch {moderate,none,strict}]
@@ -36,8 +37,8 @@ usage: ytdash [-h] [--version] [-quiet] [-search] [-research] [-nonlive]
               [-nodescription] [-novolnor] [-maxfps MAXFPS] [-maxband MAXBAND]
               [-maxheight {144,240,360,480,720,1080,1440,2160,4320}]
               [-maxwidth {256,426,640,854,1280,1920,2560,3840,7680}]
-              [-ffmpeg FFMPEG] [-autoplay] [-reallive] [-fixed]
-              [-offset OFFSET]
+              [-audioquality {0,1,-1}] [-ffmpeg FFMPEG] [-autoplay]
+              [-reallive] [-preferquality] [-fixed] [-offset OFFSET]
               URL|QUERY [URL|QUERY ...]
 
 Youtube DASH video playback.
@@ -75,7 +76,7 @@ optional arguments:
                         filter results by video definition (default: any)
   -license {creativeCommon,youtube,any}
                         filter results by video livense type (default: any)
-  -playlist             Play urls found in file (default: False)
+  -playlist, -pl        Play all urls/ids found in file(s) (default: False)
   -fullscreen, -fs      Start all videos in fullscreen mode (default: False)
   -maxresults MAXRESULTS, -mr MAXRESULTS
                         search max results (default: 5)
@@ -95,12 +96,17 @@ optional arguments:
                         max video heigth to allow (default: 768)
   -maxwidth {256,426,640,854,1280,1920,2560,3840,7680}, -mw {256,426,640,854,1280,1920,2560,3840,7680}
                         max video width to allow (default: 1360)
+  -audioquality {0,1,-1}, -aq {0,1,-1}
+                        Audio quality to enable if available, 0=lowest,
+                        1=medium, -1=highest. (default: 1)
   -ffmpeg FFMPEG, -ff FFMPEG
                         ffmpeg location route (default: ffmpeg)
-  -autoplay             Autoplay all results returned by search mode (default:
+  -autoplay, -a         Autoplay all results returned by search mode (default:
                         False)
   -reallive, -r         Enables lowest latency possible with all types of live
                         streams. (default: False)
+  -preferquality, -pq   Prioritize quality over latency in bandwidth-adaptive
+                        enabled video streams (default: False)
   -fixed, -f            Play a fixed video quality instead of doing bandwidth
                         adaptive quality change, This is the max set from
                         options (default: False)
