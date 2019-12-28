@@ -85,7 +85,8 @@ def log_(infos):
                          NEW VIDEO URL: %s''' % infos)
 
 
-def download(curlobj, url, compressed=0, rangebytes=(0, ''), bytesresponse=0):
+def download(curlobj, url, compressed=0, rangebytes=(0, ''), bytesresponse=0,
+             api=0):
     retries = 3
     status = response = 0
     curlobj.setopt(pycurl.URL, url)
@@ -113,8 +114,9 @@ def download(curlobj, url, compressed=0, rangebytes=(0, ''), bytesresponse=0):
     # if rangebytes and rangebytes != (0, ''):
     curlobj.setopt(pycurl.RANGE, None)
     if status != 200 and status != 206:
-        logging.fatal('Http Error %s trying to get video info.' % status)
-        response = 0
+        logging.fatal('Http Error %s trying to obtain this info.' % status)
+        if not api:
+            response = 0
     if curlerrnum == 6:
         logging.fatal('Could not resolve host. Internet connection issues?')
     if not retries:
@@ -624,7 +626,10 @@ def get_media(data):
                         if not islive:
                             ended = True
                         elif reason:
-                            logging.info("Youtube's reason: " + reason)
+                            if reason == 'Offline.':
+                                ended = True
+                            else:
+                                logging.info("Youtube's reason: " + reason)
                         else:
                             logging.debug("Event is still live...")
                     if ended:
@@ -681,7 +686,7 @@ if __name__ == '__main__':
     parser.add_argument('urls', metavar='URL|QUERY', type=str, nargs='+',
                         help='URLs or search queries of videos to play')
     parser.add_argument('--version', action='version',
-                        version='%(prog)s 0.17-alpha')
+                        version='%(prog)s 0.18-alpha')
     parser.add_argument('-quiet', '-q', action='store_true',
                         help='enable quiet mode (default: %(default)s)')
     parser.add_argument('-onlyone', '-oo', action='store_true',
@@ -777,6 +782,10 @@ if __name__ == '__main__':
     parser.add_argument('-reallive', '-r', action='store_true',
                         help='Enables lowest latency possible with ' +
                         'all types of live streams. ' +
+                        '(default: %(default)s)')
+    parser.add_argument('-preferquality', '-pq', action='store_true',
+                        help='Priorize quality over latency in ' +
+                        'bandwidth-adaptive enabled video streams ' +
                         '(default: %(default)s)')
     parser.add_argument('-fixed', '-f', action='store_true',
                         help='Play a fixed video quality instead of doing' +
@@ -908,7 +917,10 @@ if __name__ == '__main__':
         for mid in range(2):
             curlobj = pycurl.Curl()
             curlobj.setopt(pycurl.SHARE, session)
-            curlobj.setopt(pycurl.HTTPHEADER, ['User-Agent: ytdash/0.17'])
+            curlobj.setopt(pycurl.USERAGENT, 'PycURL/7.43 ytdash/0.18')
+            # User-Agent: PycURL/7.43.0.3 libcurl/7.52.1 OpenSSL/1.0.2t
+            # zlib/1.2.8 libidn2/0.16 libpsl/0.17.0 (+libidn2/0.16)
+            # libssh2/1.7.0 nghttp2/1.18.1 librtmp/2.3
             curlobj.setopt(pycurl.VERBOSE, 0)
             curlobj.setopt(pycurl.CONNECTTIMEOUT, 10)
             curlobj.setopt(pycurl.TIMEOUT, 30)
@@ -923,7 +935,6 @@ if __name__ == '__main__':
             curlobj.setopt(pycurl.NOSIGNAL, 1)
             # curlobj.setopt(pycurl.HEADER, 0)
             # curlobj.setopt(pycurl.KEEP_SENDING_ON_ERROR, 1)
-            # curlobj.setopt(pycurl.HTTPHEADER, HEADERS)
             curlobj.setopt(pycurl.FOLLOWLOCATION, 1)
             curlobj.setopt(pycurl.CAINFO, certifi.where())
             mediaobjs.append(curlobj)
@@ -1021,7 +1032,7 @@ if __name__ == '__main__':
             apibaseurl = 'https://www.googleapis.com/youtube/v3/'
             apipar = {}
             apipar['part'] = 'snippet'
-            apipar['key'] = 'AIzaSyD1VPTv-rIH_OtK8Fcwq9cqnvXLQ_YGKPg'
+            apipar['key'] = 'AIzaSyBSnNQ7qOmLPxC5CaHH9BWHqAgrecwzCVA'
             apiurlchecklive = apibaseurl + 'videos?' + urlencode(apipar)
             if userid:
                 apitype = 'channels'
@@ -1107,7 +1118,10 @@ if __name__ == '__main__':
                     cachedjson = 0
             if research:
                 logging.debug("API URL: " + apiurl)
-                apires = download(curl, apiurl)
+                curl.setopt(pycurl.HTTPHEADER, ['Referer:www.youtube.com/test'])
+                apires = download(curl, apiurl, 0, 0, 0, 1)
+                curl.setopt(pycurl.HTTPHEADER, None)
+                # apires = download(curl, apiurl, 0, 0, 0, 1)
                 # curl.setopt(pycurl.URL, apiurl)
                 # apires = curl.perform_rs()
                 # status = curl.getinfo(pycurl.RESPONSE_CODE)
@@ -1253,14 +1267,17 @@ if __name__ == '__main__':
             otf = 0
             manifesturl = 0
         asegoffset = vsegoffset = remainsegms = defsegoffset
-        minsegms = 1
-        maxsegms = 1
-        downresist = 1.2
+        minsegms = 2
+        maxsegms = 2
+        if args.preferquality:
+            downresist = 1.5  # Higher means more delay detected to switch down
+            upresist = 1  # Higher means more bandwidth needed to switch up
+        else:
+            downresist = 1.25
+            upresist = 1.3
         if live:
             if latencyclass[0] == 'ULTRA_LOW':
                 segsecs = 1
-                minsegms = 2
-                maxsegms = 2
             elif latencyclass[0] == 'LOW':
                 segsecs = 2
             elif latencyclass[0] == 'NORMAL':
@@ -1336,7 +1353,6 @@ if __name__ == '__main__':
                 # vsegoffset = min(segmresynclimit, vsegoffset, headnumber)
             arraydelayslim = min(max(vsegoffset, 1), defsegoffset)
             seqnumber = int(headnumber - vsegoffset)
-
         else:
             apipe = 0
             vid = int(len(videodata) / 1) - 1
@@ -1490,18 +1506,18 @@ if __name__ == '__main__':
             ffmpegbase.stdout.close()
         # MAIN LOOP: ------------------------------------------------------#
         audioband = round(int(audiodata[aid].get('bandwidth', 0))/8/1024)
-        arrayheaderslim = int(20/segsecs)*2
         delaytogoup = max(round(segsecs/2, 3), 1)
+        numsegmsecs = int(30/segsecs)  # Number of segments that fit in 25 secs.
         delays = []
         truedelays = []
         headnumbers = []
         basedelays = []
-        headtimes = []
-        walltimemss = []
+        # headtimes = []
+        # walltimemss = []
         bandest = []
         bandest2 = []
         bandest3 = []
-        basedelayavg = cachecontrol = aend = vend = end = mindelay = 0
+        basedelayavg = cachecontrol = aend = vend = end = mindelay = down = 0
         segms = firstrun = 1
         http_errors = youtubeissues = False
         pool = ThreadPoolExecutor(max_workers=2*defsegoffset)
@@ -1632,10 +1648,15 @@ if __name__ == '__main__':
                              error) = result
                             if headnumber:
                                 headnumbers.append(int(headnumber))
-                            if headtimems:
-                                headtimes.append(int(headtimems))
-                            if walltimems:
-                                walltimemss.append(int(walltimems))
+                            # if headtimems:
+                            #     headtimes.append(int(headtimems))
+                            # if walltimems:
+                            #     walltimemss.append(int(walltimems))
+                            if bandwidths:
+                                # Append each bandwidth type to its list:
+                                bandest.append(bandwidths[1])
+                                bandest2.append(bandwidths[2])
+                                bandest3.append(bandwidths[3])
                             if status == 200 or status == 206:
                                 if contenttype == "video/mp4":
                                     if newurl is not None:
@@ -1672,9 +1693,9 @@ if __name__ == '__main__':
                 if end or http_errors or youtubeissues:
                     raise Ended
                 # Limit Arrays
-                headtimes = headtimes[-arrayheaderslim:]
-                walltimemss = walltimemss[-arrayheaderslim:]
-                headnumbers = headnumbers[-arrayheaderslim:]
+                # headtimes = headtimes[-numsegmsecs:]
+                # walltimemss = walltimemss[-numsegmsecs:]
+                headnumbers = headnumbers[-numsegmsecs:]
                 basedelays = basedelays[-arraydelayslim * 2:]
                 if headnumbers:
                     headnumber = max(headnumbers)
@@ -1743,14 +1764,10 @@ if __name__ == '__main__':
                 logging.debug('Curl error: ' + str(error))
                 # BANDWIDTHS: -------------------------------------------------#
                 if not args.fixed and (live or postlivedvr):
-                    # Append each bandwidth type to its list:
-                    bandest.append(bandwidths[1])
-                    bandest2.append(bandwidths[2])
-                    bandest3.append(bandwidths[3])
-                    # Limit subarrays to min segments offset length:
-                    bandest = bandest[-defsegoffset:]
-                    bandest2 = bandest2[-defsegoffset:]
-                    bandest3 = bandest3[-defsegoffset:]
+                    # Limit bandwidths arrays info to last 25 secs of video :
+                    bandest = bandest[-int(numsegmsecs):]
+                    bandest2 = bandest2[-int(numsegmsecs):]
+                    bandest3 = bandest3[-int(numsegmsecs):]
                     # Set bandwidths averages:
                     bandestavg = round(sum(bandest)/len(bandest))
                     bandest2avg = round(sum(bandest2)/len(bandest2))
@@ -1801,7 +1818,9 @@ if __name__ == '__main__':
                         logging.debug('AID Selected: %s' % aid)
                         logging.debug('VID Selected: %s' % vid)
                 # CHECK TO GO DOWN: -------------------------------------------#
-                down = 0
+                # After down wait ten passes to check to go up (avoid slow avg):
+                if down:
+                    down -= 1
                 if(not args.fixed and vid > minvid and ffmuxerdelay < 1 and
                    not error and basedelayavg < segsecs):
                         gcheck = 1
@@ -1812,7 +1831,7 @@ if __name__ == '__main__':
                        delays[-1] > segsecs*downresist):
                         # (delays[-1] > segsecs * 2 or
                         # min(delays) > segsecs+0.3)):
-                        down = 1
+                        down = numsegmsecs
                         print(' ' * columns, end='\r')
                         print('\rDelays detected, lowering video quality...'
                               [0:columns], end='\r')
@@ -1833,10 +1852,12 @@ if __name__ == '__main__':
                 logging.debug("---> TOTAL LOCAL DELAY: " + str(elapsed3))
                 # CHECK TO GO UP: -----------------------------------------#
                 # General check:
-                upresist = 1.25  # Higher means more bandwidth needed
+                logging.debug('Down Count: ' + str(down))
                 if(not args.fixed and vid < maxvid and not down and
                    # ((bandest2[-1] > nexttband * upresist and vid < 3) or
-                   bandest2avg > nexttband*upresist and basedelayavg < segsecs):
+                   bandest2avg > nexttband*upresist and
+                   bandest2[-1] > nexttband*upresist and
+                   basedelayavg < segsecs):
                         gcheck = True
                 else:
                     gcheck = False
@@ -1851,15 +1872,16 @@ if __name__ == '__main__':
                                 goup = 1
                     elif lowlatency and not args.offset:
                         for delay in delays:
-                            if vid < 1 or round(delay, 0) == segsecs:
+                            if vid < 1 or round(delay, 0) <= segsecs:
                                 delaysok = True
                             else:
                                 delaysok = False
                                 break
-                        # delaysok = True
+                        '''# delaysok = True
                         logging.debug('Delays Ok: ' + str(delaysok))
                         if ((delaysok and round(delayavg, 2) == segsecs) or
-                           ffmuxerdelay > 1):
+                           ffmuxerdelay > 1):'''
+                        if delaysok and delayavg < segsecs:
                             goup = 1
                     if goup:
                         print(' ' * columns, end='\r')
