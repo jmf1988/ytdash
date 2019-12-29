@@ -1507,7 +1507,8 @@ if __name__ == '__main__':
         # MAIN LOOP: ------------------------------------------------------#
         audioband = round(int(audiodata[aid].get('bandwidth', 0))/8/1024)
         delaytogoup = max(round(segsecs/2, 3), 1)
-        numsegmsecs = int(30/segsecs)  # Number of segments that fit in 25 secs.
+        numsegmsecs = int(60/segsecs)  # Nº of segments that fit in X secs.
+        snumsegmsecs = int(30/segsecs)  # Shorter Nº segments that fit in X sec.
         delays = []
         truedelays = []
         headnumbers = []
@@ -1754,26 +1755,34 @@ if __name__ == '__main__':
                         if mindelay > segsecs * 0.75:
                             logging.info('Latency to high: %s seconds, ' %
                                          mindelay + 'playback not realistic')
-                threadsc = active_threads()
-                logging.debug("--> DELAY TO UP: %s seconds\n" % delaytogoup +
-                              "--> BASEDELAYS: %s seconds\n" % basedelays +
-                              "--> BASEDELAY AVG: %s seconds\n" % basedelayavg +
-                              "--> MIN DELAY: %s seconds\n" % mindelay +
-                              "--> DELAYS: %s" % delays +
-                              "--> DELAY AVG: %s seconds\n" % delayavg +
-                              "--> FFMPEG DELAYS: %s\n" % ffmuxerdelay +
-                              "--> Threads Count: %s\n" % threadsc)
+                    threadsc = active_threads()
+                    logging.debug("--> DELAY TO UP: %s seconds\n" %
+                                  delaytogoup +
+                                  "--> BASEDELAYS: %s seconds\n" % basedelays +
+                                  "--> BASEDELAY AVG: %s seconds\n" %
+                                  basedelayavg +
+                                  "--> MIN DELAY: %s seconds\n" % mindelay +
+                                  "--> DELAYS: %s" % delays +
+                                  "--> DELAY AVG: %s seconds\n" % delayavg +
+                                  "--> FFMPEG DELAYS: %s\n" % ffmuxerdelay +
+                                  "--> Threads Count: %s\n" % threadsc)
                 logging.debug('Curl error: ' + str(error))
                 # BANDWIDTHS: -------------------------------------------------#
                 if not args.fixed and (live or postlivedvr):
                     # Limit bandwidths arrays info to last 25 secs of video :
-                    bandest = bandest[-int(numsegmsecs):]
-                    bandest2 = bandest2[-int(numsegmsecs):]
-                    bandest3 = bandest3[-int(numsegmsecs):]
+                    bandest = bandest[-numsegmsecs:]
+                    bandests = bandest[-snumsegmsecs:]
+                    bandest2 = bandest2[-numsegmsecs:]
+                    bandest2s = bandest2[-snumsegmsecs:]
+                    bandest3 = bandest3[-numsegmsecs:]
+                    bandest3s = bandest3[-snumsegmsecs:]
                     # Set bandwidths averages:
                     bandestavg = round(sum(bandest)/len(bandest))
+                    bandestsavg = round(sum(bandests)/len(bandests))
                     bandest2avg = round(sum(bandest2)/len(bandest2))
+                    bandest2savg = round(sum(bandest2s)/len(bandest2s))
                     bandest3avg = round(sum(bandest3)/len(bandest3))
+                    bandest3savg = round(sum(bandest3s)/len(bandest3s))
                     # Get bandwidth needed per close video quality:
                     pvid = max(vid - 1, minvid)
                     nvid = min(vid + 1, len(videodata) - 1)
@@ -1784,6 +1793,7 @@ if __name__ == '__main__':
                     currtband = round(currvband) + audioband
                     nexttband = round(nextvband) + audioband
                     logging.debug('Bandsest2: ' + str(bandest2))
+                    logging.debug('Bandsest2s: ' + str(bandest2s))
                     if not args.debug:
                         print(' ' * columns, end='\r')
                         ptext = ('\rEstimated bandwidth Last/Avg: ' +
@@ -1794,11 +1804,14 @@ if __name__ == '__main__':
                         print(ptext[0:columns], end='\r', flush=True)
                     logging.debug('X-Bandwidth-Avg: ' + str(bandwidths[0]))
                     logging.debug('X-Bandwidth-Est: ' + str(bandwidths[1]) +
-                                  ' - AVG: ' + str(bandestavg))
+                                  ' - AVG: ' + str(bandestavg) + ' - sAVG: ' +
+                                  str(bandestsavg))
                     logging.debug('X-Bandwidth-Est2: ' + str(bandwidths[2]) +
-                                  ' - AVG: ' + str(bandest2avg))
+                                  ' - AVG: ' + str(bandest2avg) + ' - sAVG: ' +
+                                  str(bandest2savg))
                     logging.debug('X-Bandwidth-Est3: ' + str(bandwidths[3]) +
-                                  ' - AVG: ' + str(bandest3avg))
+                                  ' - AVG: ' + str(bandest3avg) + ' - sAVG: ' +
+                                  str(bandest3savg))
                     logging.debug('Prev total band: ' + str(prevtband))
                     logging.debug('Curr total band: ' + str(currtband))
                     logging.debug('Next total band: ' + str(nexttband))
