@@ -47,7 +47,7 @@ class Writer:
             return 0
 
 
-class Ended(Exception):
+class Endit(Exception):
     pass
 
 
@@ -88,7 +88,7 @@ def log_(infos):
 def download(curlobj, url, compressed=0, rangebytes=(0, ''), bytesresponse=0,
              api=0):
     retries = 3
-    status = response = 0
+    status = response = message = 0
     curlobj.setopt(pycurl.URL, url)
     if compressed:
         curlobj.setopt(pycurl.ACCEPT_ENCODING, '')
@@ -104,6 +104,10 @@ def download(curlobj, url, compressed=0, rangebytes=(0, ''), bytesresponse=0,
                 response = curlobj.perform_rs()
             status = curlobj.getinfo(pycurl.RESPONSE_CODE)
             curlerrnum = 0
+            if status != 200 and status != 206 and status != 403:
+                retries -= 1
+                time.sleep(1)
+                continue
             break
         except pycurl.error as error:
             curlerrnum = error.args[0]
@@ -113,14 +117,19 @@ def download(curlobj, url, compressed=0, rangebytes=(0, ''), bytesresponse=0,
     curlobj.setopt(pycurl.ACCEPT_ENCODING, None)
     # if rangebytes and rangebytes != (0, ''):
     curlobj.setopt(pycurl.RANGE, None)
-    if status != 200 and status != 206:
-        logging.fatal('Http Error %s trying to obtain this info.' % status)
+    if retries < 1:
+        if curlerrnum == 6:
+            message = 'Could not resolve host. Internet connection issues?'
+        else:
+            message = ('Retries exhausted trying to open URL: ' + url +
+                       '\nCURL Error: ' + curlerrnum)
+    if status and status != 200 and status != 206:
+        message = 'Http Error %s trying to obtain critical info.' % status
         if not api:
             response = 0
-    if curlerrnum == 6:
-        logging.fatal('Could not resolve host. Internet connection issues?')
-    if not retries:
-        logging.fatal('Retries exhausted trying to open URL: ' + url)
+    if message:
+        logging.fatal(message)
+        notify_send(message)
     return response
 
 
@@ -423,6 +432,13 @@ def ffmuxer(ffmpegbin, ffmuxerstdout, apipe, vpipe):
     return ffmpegmuxer
 
 
+def notify_send(message, duration=10000):
+    try:
+        subprocess.call(['notify-send', 'YTdash', message, '-t', str(duration)])
+    except:
+        pass
+
+
 def get_media(data):
     baseurl, segmenturl, fd, curlobj, init = data
     errxxxr = err4xxr = 2  # Max retries when http errors.
@@ -518,10 +534,11 @@ def get_media(data):
                     interrupted = 1
                     time.sleep(1)
             elif curlerrnum == 6:
-                print('Could not resolve host or connection timed out,' +
-                      'Internet connection issues?, retrying in 1 second...',
-                      end='\r')
-                time.sleep(1)
+                messa = ('Could not resolve host. Internet connection issues?' +
+                         '\n5 seconds between retries...')
+                print(messa, end='\r')
+                time.sleep(5)
+                notify_send(messa, 5000)
                 continue
             else:
                 logging.info("No handled pycurl error number, please report" +
@@ -611,7 +628,7 @@ def get_media(data):
                 time.sleep(segsecs)
                 # Error 503 is less recoverable it seems, so less retries:
                 if status == 503:
-                    logging.info('Service unavailable...')
+                    logging.info('Service unavailable error...')
                     errxxxr -= 2
                 if live:
                     logging.debug('Refreshing video metadata...')
@@ -633,14 +650,14 @@ def get_media(data):
                         else:
                             logging.debug("Event is still live...")
                     if ended:
-                        logging.info("Live event ended.")
+                        logging.debug("Live event ended.")
                 errxxxr -= 1
             # If retries exhausted or Youtube give a reason of failure, quit:
             if err4xxr < 1 or errxxxr < 1 or reason or ended:
                 rawheaders.close()
                 fd.close()
             if ended:
-                return 1
+                return 4
             elif err4xxr < 1 or errxxxr < 1:
                 return 2
             elif reason:
@@ -1518,9 +1535,10 @@ if __name__ == '__main__':
         bandest = []
         bandest2 = []
         bandest3 = []
-        basedelayavg = cachecontrol = aend = vend = end = mindelay = down = 0
+        basedelayavg = cachecontrol = aend = vend = playerclosed = mindelay = 0
+        down = 0
         segms = firstrun = 1
-        http_errors = youtubeissues = False
+        http_errors = youtubeissues = ended = end = False
         pool = ThreadPoolExecutor(max_workers=2*defsegoffset)
         while True:
             starttime = time.time()
@@ -1581,7 +1599,7 @@ if __name__ == '__main__':
                                     asegoffset -= 1
                                 seqnumber += 1
                             if aend and vend:
-                                raise Ended
+                                raise Endit
                         elif live and initv == 0 == inita:
                             asegurl = vsegurl = "sq/%s" % seqnumber
                             seqnumber += 1
@@ -1621,10 +1639,11 @@ if __name__ == '__main__':
                                 rounds += 1'''
                                 logging.debug('Checking player...')
                                 if player.poll() is not None:
-                                    end = 1
+                                    playerclosed = 1
                                     break
                     ffmuxerdelay = round(time.time() - ffmuxerstarttimer, 4)
-                    if not end and manifesturl and not inita == initv == 1:
+                    if (not playerclosed and manifesturl and
+                       not inita == initv == 1):
                         logging.debug('FFmpeg read pipes: %s, %s' %
                                       (rpipes[pid][0], rpipes[pid][1]))
                         ffmpegmuxer = ffmuxer(args.ffmpeg, ffmuxerstdout,
@@ -1683,18 +1702,26 @@ if __name__ == '__main__':
                             http_errors = True
                         elif result == 3:
                             youtubeissues = True
+                        elif result == 4:
+                            ended = True
                     if otf or manifesturl:
                         closepipes(rpipes[pid])
                         pid += 1
                 # Check for errors in For results: ----------------------------#
                 if http_errors:
+                    message = 'Too many errors in a row, aborting.'
+                elif youtubeissues:
+                    message = 'YouTube server\'s issues, aborting.'
+                elif ended:
+                    message = 'Live event has ended.'
+                else:
+                    message = 0
+                if end or ended or http_errors or youtubeissues:
                     print(' ' * columns, end='\r')
-                    logging.info('Too many errors, aborting.')
-                if youtubeissues:
-                    print(' ' * columns, end='\r')
-                    logging.info('YouTube server\'s issues, aborting.')
-                if end or http_errors or youtubeissues:
-                    raise Ended
+                    if message:
+                        logging.info(message)
+                        notify_send(message)
+                    raise Endit
                 # Limit Arrays
                 # headtimes = headtimes[-numsegmsecs:]
                 # walltimemss = walltimemss[-numsegmsecs:]
@@ -1722,7 +1749,7 @@ if __name__ == '__main__':
                                       % expiresecs)
                         mediadata = get_mediadata(pycurl.Curl(), videoid)
                         if mediadata == 1 or mediadata == 2:
-                            raise Ended
+                            raise Endit
                         else:
                             segsecs = mediadata[7]
                             audiodata = mediadata[1]
@@ -1820,7 +1847,7 @@ if __name__ == '__main__':
                     inita = initv = 0
                     if not args.fixed:
                         # Select an audio and video quality:
-                        minband = bandest3avg
+                        minband = bandest2avg
                         logging.debug("Bandwidth detected: %s" % bandest3avg)
                         logging.debug('Audio bandwidth: %s' % audioband)
                         for idv in range(len(videodata)):
@@ -1924,14 +1951,14 @@ if __name__ == '__main__':
                         logging.debug("Sleeping %s seconds..." % sleepsecs)
                         while sleepsecs > 0:
                             if player.poll() is not None:
-                                raise Ended
+                                raise Endit
                             partialsecs = min(1, max(round(sleepsecs, 4), 0))
                             sleepsecs -= 1
                             if partialsecs:
                                 logging.debug("Waiting %s sec..." % partialsecs)
                                 time.sleep(partialsecs)
             # EXCEPTIONS: -----------------------------------------------------#
-            except Ended:
+            except Endit:
                 if player.poll() is not None:
                     print(' ' * columns, end='\r')
                     playclosemess = 'Player closed'
