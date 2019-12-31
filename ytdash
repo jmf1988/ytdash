@@ -20,6 +20,8 @@ import re
 import shlex
 import json
 import argparse
+import html
+
 try:
     import gi
     gi.require_version('Gdk', '3.0')
@@ -122,7 +124,7 @@ def download(curlobj, url, compressed=0, rangebytes=(0, ''), bytesresponse=0,
             message = 'Could not resolve host. Internet connection issues?'
         else:
             message = ('Retries exhausted trying to open URL: ' + url +
-                       '\nCURL Error: ' + curlerrnum)
+                       '\nCURL Error: ' + str(curlerrnum))
     if status and status != 200 and status != 206:
         message = 'Http Error %s trying to obtain critical info.' % status
         if not api:
@@ -424,7 +426,7 @@ def ffmuxer(ffmpegbin, ffmuxerstdout, apipe, vpipe):
     fftries = 0
     while ffmpegmuxer.poll() is not None:
         print("Waiting ffmpeg muxer...")
-        if fftries < 5:
+        if fftries < 15:
             time.sleep(1)
         else:
             raise Exception
@@ -432,9 +434,9 @@ def ffmuxer(ffmpegbin, ffmuxerstdout, apipe, vpipe):
     return ffmpegmuxer
 
 
-def notify_send(message, duration=10000):
+def notify_send(message, duration=10000, title='YTdash'):
     try:
-        subprocess.call(['notify-send', 'YTdash', message, '-t', str(duration)])
+        subprocess.call(['notify-send', title, message, '-t', str(duration)])
     except:
         pass
 
@@ -1196,7 +1198,8 @@ if __name__ == '__main__':
                     livebroad = False
                 else:
                     livebroad = True
-                print('%s) %s\n' % (itemnum, title) +
+                # html.unescape(title)
+                print('%s) %s\n' % (itemnum, html.unescape(title)) +
                       '    * Description: {}\n'.format(repr(description)) +
                       '    * Channel: %s\n' % channeltitle +
                       '    * Live: %s' % livebroad)
@@ -1252,7 +1255,7 @@ if __name__ == '__main__':
                 logging.info('Unable to get all the video metadata needed.')
             del urls[0]
             # Sleep between many failed fast request:
-            time.sleep(0.5)
+            time.sleep(1)
             continue
         else:
             latencyclass = mediadata[0]
@@ -1720,7 +1723,7 @@ if __name__ == '__main__':
                     print(' ' * columns, end='\r')
                     if message:
                         logging.info(message)
-                        notify_send(message)
+                        notify_send(message, 10000, title)
                     raise Endit
                 # Limit Arrays
                 # headtimes = headtimes[-numsegmsecs:]
