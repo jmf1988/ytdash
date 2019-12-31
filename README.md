@@ -10,7 +10,8 @@ Dependencies installation:
 - Debian based:
 apt-get install python3 python3-pycurl python3-certifi ffmpeg mpv 
 
-Optional: for terminal/player titles/descriptions emojis support also install package fonts-symbola.
+Optional: - For terminal/player titles/descriptions emojis support install package "fonts-symbola".
+          - For Native desktop notifications install package "libnotify-bin".
 
 Note: The above installs distro version of pycurl that can be outdated and come with gnutls backend enabled by default, which may use more memory and cause some issues. To install pycurl with openssl backend that uses less memory and is more realiable do the following:
 
