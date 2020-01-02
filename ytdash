@@ -1125,7 +1125,8 @@ if __name__ == '__main__':
                     invalidcontent = 0
                     if lifetime > 24 or args.research:
                         research = 1
-                    elif(len(cachedcontent) < 10 or
+                    elif(type(cachedjson) is not dict or
+                         len(cachedcontent) < 10 or
                          cachedcontent[:9] != "{'items':"):
                             invalidcontent = 1
                     else:
@@ -1135,42 +1136,39 @@ if __name__ == '__main__':
                     logging.debug('Invalid cached content, researching...')
                     research = 1
                     cachedjson = 0
+            # Refresh results if search qeury is not cached or cached but old:
             if research:
                 logging.debug("API URL: " + apiurl)
                 curl.setopt(pycurl.HTTPHEADER, ['Referer:www.youtube.com/test'])
                 apires = download(curl, apiurl, 0, 0, 0, 1)
                 curl.setopt(pycurl.HTTPHEADER, None)
-                # apires = download(curl, apiurl, 0, 0, 0, 1)
-                # curl.setopt(pycurl.URL, apiurl)
-                # apires = curl.perform_rs()
-                # status = curl.getinfo(pycurl.RESPONSE_CODE)
-                # logging.info('API error code: ' + str(status))
                 rjson = {}
-                reason = 0
                 if apires:
                     try:
                         rjson = eval(apires)
                     except:
                         logging.info('Error parsing API response.')
-                    del apires
-                    if type(rjson) is dict:
-                        logging.debug('Rjson: ' + str(rjson))
-                        if rjson.get('items'):
-                            with open(searchcachefile, 'w') as fd:
-                                fd.write(str(rjson))
-                        elif rjson.get('error'):
-                            reason = rjson['error']['errors'][0]['reason']
-                            message = rjson['error']['errors'][0]['message']
-                            logging.info('API failure reason: ' + reason)
-                            logging.info('API message: ' + message)
                     else:
+                        del apires
+                        if type(rjson) is not dict:
+                            rjson = {}
+                    logging.debug('Rjson: ' + str(rjson))
+                    if rjson.get('items'):
+                        with open(searchcachefile, 'w') as fd:
+                            fd.write(str(rjson))
+                    elif rjson.get('error'):
+                        reason = rjson['error']['errors'][0]['reason']
+                        message = rjson['error']['errors'][0]['message']
+                        logging.info('API failure reason: ' + reason)
+                        logging.info('API message: ' + message)
                         rjson = {}
-                    if (not rjson or reason) and cachedjson:
+                if not rjson:
+                    if cachedjson:
                         research = 0
                         rjson = cachedjson
-                        logging.info('Error getting API results, using old ' +
-                                     'cached version.')
-                    elif not rjson:
+                        logging.info('Error getting API results, using ' +
+                                     'old cached version.')
+                    else:
                         if len(args.urls) < 2:
                             quit()
                         else:
