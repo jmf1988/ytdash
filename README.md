@@ -136,7 +136,7 @@ Extreme example:
 
 To play first 5 videos in a channel one by one with a max height of 720, max FPS of 30, using a max bandwidth of 400 kB/s, with an offset, of -30 minutes and with bandwidth adaptative mode disabled:
 
-- ytdash "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -f -maxresults 5 -offset 30m -maxfps 30 -maxheight 720 -maxband 400
+- ytdash "https://www.youtube.com/channel/UCSyg9cb3Iq-NtlbxqNB9wGw" -s -f -maxresults 5 -offset 30m -maxfps 30 -maxheight 720 -maxband 400
 
 That will ignore all qualities of the video/s above the first lowest limit reached and play the maximum quality left in fixed mode (the selected quality will be not switched to a lower one even if delays or bandwidth drops are detected.)
 
