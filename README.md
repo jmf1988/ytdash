@@ -141,6 +141,7 @@ To play first 5 videos in a channel one by one with a max height of 720, max FPS
 That will ignore all qualities of the video/s above the first lowest limit reached and play the maximum quality left in fixed mode (the selected quality will be not switched to a lower one even if delays or bandwidth drops are detected.)
 
 Non-live videos:
+
 It is possible to play some non-live non-restricted public videos but that is not a priority for this project and there are many others, more complete and mature tools to do it, however, the connection errors handling and reconnecting (infinite retry)  development needed for the live streams can be an advantage for long videos, these may be better handled than playing them  with a player that uses ffmpeg, with it is more difficult to pass/have complex http options/errors, like long reconnect tries, because the C Curl library used here has more polished and mature code to deal specifically with http/s, and ffmpeg is used just as a muxer/demuxer.
 
 Recommended and default player is mpv >=0.28 but any player that can play from pipe should work, configured correctly.
