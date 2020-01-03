@@ -1,8 +1,8 @@
 
 # YTdash
-YTdash is a linux command line tool written in python 3 that enables media playing with native performance by using a local player to play youtube live DASH videos without having to lose adaptative video playback, which is more important when streaming live content because there is less buffer available to pull from, to do all this latency improvements are approached with a combination of parallelized https requests, DASH protocol and keep alive connections.
+YTdash is a linux command line tool written in python 3 that allows you to search online and play mainly live videos from Youtube with native performance by using a local player without having to lose bandwidth-adaptative capabilities, which is more important when streaming live content because there is less buffer available to pull from. To do all this, latency improvements are approached with a combination of parallelized https requests, DASH protocol, and keep alive connections, using the more reliable third party programs known in each function needed; the Mpv player for low latency playback and minimal interface, ffmpeg for muxing/demuxing and cURL to download the content.
 
-Recommended dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5), pycurl(>=7.43.0.2)
+Required dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.5), pycurl(>=7.43.0.2)
 
 Python dependencies: pycurl and certifi
 
@@ -10,7 +10,7 @@ Dependencies installation:
 - Debian based:
 apt-get install python3 python3-pycurl python3-certifi ffmpeg mpv 
 
-- Optional dependencies: "fonts-symbola" and "libnotify-bin" packages for terminal/player titles/descriptions emojis support and native desktop notifications respectively.
+- Optional dependencies: "fonts-symbola" and "libnotify-bin" packages for terminal/player titles/descriptions emojis and symbols support and native desktop notifications respectively.
 
 Note: The above installs distro version of pycurl that can be outdated and come with gnutls backend enabled by default, which may use more memory and cause some issues. To install pycurl with openssl backend that uses less memory and is more realiable do the following:
 
