@@ -146,7 +146,7 @@ It is possible to play some non-live non-restricted public videos but that is no
 
 Recommended and default player is mpv >=0.28 but any player that can play from pipe should work, configured correctly.
 
-MPV player tips: Shift + I to see video and audio live details.
+MPV player tips: Shift + I keys to see video and audio live details, "q" to close the player, "m" to mute, "/" and "*" for volume control.
 
 Recommended ffmpeg >=4.0 ( or better the tiny specific ffmpeg x86_64 build from this repo.)
 
