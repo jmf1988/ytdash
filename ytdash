@@ -1136,7 +1136,7 @@ if __name__ == '__main__':
                     logging.debug('Invalid cached content, researching...')
                     research = 1
                     cachedjson = 0
-            # Refresh results if search qeury is not cached or cached but old:
+            # perform API request if search query isn't cached or too old:
             if research:
                 logging.debug("API URL: " + apiurl)
                 curl.setopt(pycurl.HTTPHEADER, ['Referer:www.youtube.com/test'])
@@ -1162,18 +1162,11 @@ if __name__ == '__main__':
                         logging.info('API failure reason: ' + reason)
                         logging.info('API message: ' + message)
                         rjson = {}
-                if not rjson:
-                    if cachedjson:
+                if not rjson and cachedjson:
                         research = 0
                         rjson = cachedjson
                         logging.info('Error getting API results, using ' +
                                      'old cached version.')
-                    else:
-                        if len(args.urls) < 2:
-                            quit()
-                        else:
-                            del urls[0]
-                            continue
             else:
                 rjson = cachedjson
             items = rjson.get('items')
@@ -1296,13 +1289,14 @@ if __name__ == '__main__':
         if live:
             if latencyclass[0] == 'ULTRA_LOW':
                 segsecs = 1
+                maxsegms = 3
             elif latencyclass[0] == 'LOW':
                 segsecs = 2
             elif latencyclass[0] == 'NORMAL':
                 segsecs = 5
                 minsegms = 1
                 maxsegms = 1
-                downresist = 1
+                downresist = 1.1
             if args.reallive:
                 remainsegms = vsegoffset = 0
         maxaid = len(audiodata) - 1
@@ -1762,10 +1756,10 @@ if __name__ == '__main__':
                     logging.info('Resyncing...')
                 firstrun = 0
                 # DELAYS: -----------------------------------------------------#
-                # Save total time that took to download all segment(s):
+                if live or postlivedvr:
+                    segms = len(segmsresults)
                 if not error:
-                    if live or postlivedvr:
-                        segms = len(segmsresults)
+                    # Save total time that took to download all segment(s):
                     delay = round((time.time()-starttime-ffmuxerdelay)/segms, 4)
                     delays.append(round(delay, 4))
                     delays = delays[-arraydelayslim:]
@@ -1848,7 +1842,7 @@ if __name__ == '__main__':
                     inita = initv = 0
                     if not args.fixed:
                         # Select an audio and video quality:
-                        minband = bandest2avg
+                        minband = bandest3avg
                         logging.debug("Bandwidth detected: %s" % bandest3avg)
                         logging.debug('Audio bandwidth: %s' % audioband)
                         for idv in range(len(videodata)):
@@ -1864,7 +1858,7 @@ if __name__ == '__main__':
                 # CHECK TO GO DOWN: -------------------------------------------#
                 # After down wait ten passes to check to go up (avoid slow avg):
                 if down:
-                    down -= 1
+                    down -= segms
                 if(not args.fixed and vid > minvid and ffmuxerdelay < 1 and
                    not error and basedelayavg < segsecs):
                         gcheck = 1
@@ -1898,7 +1892,7 @@ if __name__ == '__main__':
                 # CHECK TO GO UP: -----------------------------------------#
                 # General check:
                 logging.debug('Down Count: ' + str(down))
-                if(not args.fixed and vid < maxvid and not down and
+                if(not args.fixed and vid < maxvid and down < 1 and
                    # ((bandest2[-1] > nexttband * upresist and vid < 3) or
                    bandest2avg > nexttband*upresist and
                    bandest2[-1] > nexttband*upresist and
