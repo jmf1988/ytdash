@@ -1048,6 +1048,7 @@ if __name__ == '__main__':
                 logging.debug('Video URL given, search not needed.')
             # apitype = 'videos'
         else:
+            curl.setopt(pycurl.HTTPHEADER, ['Referer:www.youtube.com/test'])
             apibaseurl = 'https://www.googleapis.com/youtube/v3/'
             apipar = {}
             apipar['part'] = 'snippet'
@@ -1057,15 +1058,23 @@ if __name__ == '__main__':
                 apitype = 'channels'
                 apipar['forUsername'] = userid
                 apiurl = apibaseurl + apitype + '?' + urlencode(apipar)
-                # curl.setopt(pycurl.URL, apiurl)
-                # r = curl.perform_rb()
-                r = download(curl, apiurl, 0, 0, 1)
-                channelitems = json.loads(r).get('items')
-                if channelitems:
+                logging.debug("API URL: " + apiurl)
+                useritems = download(curl, apiurl, 0, 0, 0, 1)
+                logging.debug('Channel items: ' + str(useritems))
+                try:
+                    useritems = eval(useritems)
+                except:
+                    logging.info('Error getting API response content.')
+                if type(useritems) is not dict:
+                    useritems = {}
+                channelitems = useritems.get('items')
+                if (channelitems and len(channelitems) > 0 and
+                   channelitems[0].get('id')):
                     channelid = channelitems[0].get('id')
                 else:
-                    logging.info('Could not get user channel id')
-                    quit()
+                    logging.info('Could not obtain a channel id from user id')
+                    del urls[0]
+                    continue
                 del apipar['forUsername']
             apitype = 'search'
             apipar['type'] = 'video'
@@ -1139,9 +1148,8 @@ if __name__ == '__main__':
             # perform API request if search query isn't cached or too old:
             if research:
                 logging.debug("API URL: " + apiurl)
-                curl.setopt(pycurl.HTTPHEADER, ['Referer:www.youtube.com/test'])
+                # curl.setopt(pycurl.HTTPHEADER, ['Referer:www.youtube.com/test'])
                 apires = download(curl, apiurl, 0, 0, 0, 1)
-                curl.setopt(pycurl.HTTPHEADER, None)
                 rjson = {}
                 if apires:
                     try:
@@ -1169,6 +1177,7 @@ if __name__ == '__main__':
                                      'old cached version.')
             else:
                 rjson = cachedjson
+            curl.setopt(pycurl.HTTPHEADER, None)
             items = rjson.get('items')
             if items:
                 print("Videos found:")
