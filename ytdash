@@ -1145,10 +1145,9 @@ if __name__ == '__main__':
                     logging.debug('Invalid cached content, researching...')
                     research = 1
                     cachedjson = 0
-            # perform API request if search query isn't cached or too old:
+            # perform the API request if search query isn't cached or too old:
             if research:
                 logging.debug("API URL: " + apiurl)
-                # curl.setopt(pycurl.HTTPHEADER, ['Referer:www.youtube.com/test'])
                 apires = download(curl, apiurl, 0, 0, 0, 1)
                 rjson = {}
                 if apires:
@@ -1161,15 +1160,15 @@ if __name__ == '__main__':
                         if type(rjson) is not dict:
                             rjson = {}
                     logging.debug('Rjson: ' + str(rjson))
-                    if rjson.get('items'):
-                        with open(searchcachefile, 'w') as fd:
-                            fd.write(str(rjson))
-                    elif rjson.get('error'):
+                    if rjson.get('error'):
                         reason = rjson['error']['errors'][0]['reason']
                         message = rjson['error']['errors'][0]['message']
                         logging.info('API failure reason: ' + reason)
                         logging.info('API message: ' + message)
                         rjson = {}
+                    elif rjson:
+                        with open(searchcachefile, 'w') as fd:
+                            fd.write(str(rjson))
                 if not rjson and cachedjson:
                         research = 0
                         rjson = cachedjson
@@ -1866,7 +1865,7 @@ if __name__ == '__main__':
                         logging.debug('VID Selected: %s' % vid)
                 # CHECK TO GO DOWN: -------------------------------------------#
                 # After down wait ten passes to check to go up (avoid slow avg):
-                if down:
+                if down > 0:
                     down -= segms
                 if(not args.fixed and vid > minvid and ffmuxerdelay < 1 and
                    not error and basedelayavg < segsecs):
@@ -1904,7 +1903,7 @@ if __name__ == '__main__':
                 if(not args.fixed and vid < maxvid and down < 1 and
                    # ((bandest2[-1] > nexttband * upresist and vid < 3) or
                    bandest2avg > nexttband*upresist and
-                   bandest2[-1] > nexttband*upresist and
+                   max(bandest2[-segms:]) > nexttband*upresist and
                    basedelayavg < segsecs):
                         gcheck = True
                 else:
