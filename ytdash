@@ -624,7 +624,7 @@ def get_media(data):
                     logging.debug('Segment not available yet.')
                     logging.debug('Retrying in 1 second')
                     err4xxr -= 1
-                    time.sleep(1)
+                    time.sleep(max(segsecs/2, 1))
             else:
                 # For all http errors refresh data and retry errxxxr times:
                 time.sleep(segsecs)
@@ -1714,7 +1714,7 @@ if __name__ == '__main__':
                 if http_errors:
                     message = 'Too many errors in a row, aborting.'
                 elif youtubeissues:
-                    message = 'YouTube server\'s issues, aborting.'
+                    message = 'YouTube\'s server issues, aborting.'
                 elif ended:
                     message = 'Live event has ended.'
                 else:
@@ -1803,6 +1803,7 @@ if __name__ == '__main__':
                     bandest = bandest[-numsegmsecs:]
                     bandests = bandest[-snumsegmsecs:]
                     bandest2 = bandest2[-numsegmsecs:]
+                    lastbandest2 = max(bandest2[-segms:])
                     bandest2s = bandest2[-snumsegmsecs:]
                     bandest3 = bandest3[-numsegmsecs:]
                     bandest3s = bandest3[-snumsegmsecs:]
@@ -1833,13 +1834,13 @@ if __name__ == '__main__':
                                  (delays[-1], delayavg))
                         print(ptext[0:columns], end='\r', flush=True)
                     logging.debug('X-Bandwidth-Avg: ' + str(bandwidths[0]))
-                    logging.debug('X-Bandwidth-Est: ' + str(bandwidths[1]) +
+                    logging.debug('X-Bandwidth-Est: ' + str(bandest[-1]) +
                                   ' - AVG: ' + str(bandestavg) + ' - sAVG: ' +
                                   str(bandestsavg))
-                    logging.debug('X-Bandwidth-Est2: ' + str(bandwidths[2]) +
+                    logging.debug('X-Bandwidth-Est2: ' + str(lastbandest2) +
                                   ' - AVG: ' + str(bandest2avg) + ' - sAVG: ' +
                                   str(bandest2savg))
-                    logging.debug('X-Bandwidth-Est3: ' + str(bandwidths[3]) +
+                    logging.debug('X-Bandwidth-Est3: ' + str(bandest3[-1]) +
                                   ' - AVG: ' + str(bandest3avg) + ' - sAVG: ' +
                                   str(bandest3savg))
                     logging.debug('Prev total band: ' + str(prevtband))
