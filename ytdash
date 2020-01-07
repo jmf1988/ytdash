@@ -1,26 +1,5 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
-from threading import active_count as active_threads
-try:
-    import xml.etree.cElementTree as ET
-except ImportError:
-    import xml.etree.ElementTree as ET
-from urllib.parse import parse_qs, urlparse, urlencode
-from logging.handlers import logging, RotatingFileHandler
-from io import BytesIO
-import pycurl
-import certifi
-import os
-import signal
-import sys
-import time
-import subprocess
-import re
-import shlex
-import json
-import argparse
-import html
 
 try:
     import gi
@@ -697,9 +676,8 @@ def closepipes(totalpipes):
 
 
 if __name__ == '__main__':
-    global ffmpegmuxer, args, livecontent, live, otf, lowlatency, manifesturl
-    global segsecs, videoid, minvid
-    assert ('linux' in sys.platform), "This code runs on Linux only."
+    import argparse
+    import re
     parser = argparse.ArgumentParser(prog='ytdash',
                                      description='Youtube DASH video playback.')
     parser.add_argument('urls', metavar='URL|QUERY', type=str, nargs='+',
@@ -815,7 +793,87 @@ if __name__ == '__main__':
                         '(i.e: -o 2h, -o 210m, -offset 3000s, for hours,' +
                         ' minutes and seconds respectively.) ' +
                         '(default: 3 segments)')
+    global args
     args = parser.parse_args()
+    # Check versions needed:
+    import sys
+    import subprocess
+    message = 0
+    if sys.platform != 'linux':
+        message = "This script runs on Linux only."
+    elif sys.version_info[0:2] < (3, 5):
+        message = 'Python version 3.5 or higher is needed.'
+    else:
+        try:
+            import pycurl
+        except Exception as Exc:
+            message = 'Exception occurred while importing pycurl: ' + str(Exc)
+        else:
+            if pycurl.version.split()[0].split('/')[-1] < '7.43.0.2':
+                message = 'PycURL version 7.43.0.2 or higher is needed.'
+            else:
+                # Check player:
+                try:
+                    playerccmd = [args.player]
+                    if args.player[:3] == 'mpv' or args.player[:3] == 'vlc':
+                        playerccmd.append('--version')
+                    elif args.player[:6] == 'ffplay':
+                        playerccmd.append('-version')
+                    playeroutput = str(subprocess.check_output(playerccmd))
+                    playeroutput = playeroutput.split()
+                except FileNotFoundError:
+                    message = args.player + ' player not found.'
+                except Exception as Exc:
+                    message = 'Exception checking player version: ' + str(Exc)
+                else:
+                    if args.player[-3:] == 'mpv':
+                        if playeroutput and len(playeroutput) > 1:
+                            playerver = playeroutput[1]
+                            if playerver < '0.28':
+                                message = 'Mpv version 0.28 or higher needed.'
+                        else:
+                            print('Unable to verify the mpv player version.')
+                    else:
+                        print('*** Ytdash was not tested using this player,' +
+                              ' unexpected behaviour and/or errors may happen. '
+                              'Please use the recommended player (Mpv>=0.28).')
+                if not message:
+                    # Check ffmpeg:
+                    try:
+                        ffmpegver = str(subprocess.check_output([args.ffmpeg,
+                                                                 '-version']))
+                        ffmpegver = ffmpegver.split()
+                    except FileNotFoundError:
+                        message = 'FFmpeg not found.'
+                    except Exception as Exc:
+                        message = 'Exception checking ffmpeg: ' + str(Exc)
+                    else:
+                        if ffmpegver and len(ffmpegver) > 2:
+                            ffmpegver = ffmpegver[2]
+                            if ffmpegver < '3.2':
+                                message = 'FFmpeg version 3.2 or higher needed.'
+                        else:
+                            print('Unable to verify the ffmpeg version.')
+    if message:
+        print(message)
+        quit()
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    from threading import active_count as active_threads
+    try:
+        import xml.etree.cElementTree as ET
+    except ImportError:
+        import xml.etree.ElementTree as ET
+    from urllib.parse import parse_qs, urlparse, urlencode
+    from logging.handlers import logging, RotatingFileHandler
+    from io import BytesIO
+    import certifi
+    import os
+    import signal
+    import time
+    import shlex
+    import json
+    import html
+    global ffmpegmuxer, livecontent, live, otf, manifesturl, segsecs
     os.setpgrp()
     # Check directories used:
     homedir = os.environ['HOME']
@@ -906,7 +964,8 @@ if __name__ == '__main__':
                      'search in Youtube for videos if channel IDs ' +
                      'found in given file/s, other normal video ids/urls ' +
                      'found will be played following -nonlive flag option.')
-    if args.player == 'mpv':
+    playerbaseargs = ''
+    if args.player[:3] == 'mpv':
         playerbaseargs = ' --input-terminal=no '
         #              ' --rebase-start-time=yes'
         #              '--profile=low-latency'
@@ -916,12 +975,18 @@ if __name__ == '__main__':
             playerbaseargs += ' --fullscreen '
         if not args.debug:
             playerbaseargs += ' --really-quiet=yes '
-    elif args.player == 'vlc':
+    elif args.player[:3] == 'vlc':
         playerbaseargs = ' --file-caching=5000 '
         if args.fullscreen:
             playerbaseargs += ' --fullscreen '
     else:
-        playerbaseargs = ' - '
+        # Other players way to play audio and video separately is unknown so:
+        if args.nonlive:
+            logging.info('Non-live videos cannot be played with this player.' +
+                         ' Please use mpv (recommended) or vlc.')
+            quit()
+        if args.player[:6] == 'ffplay':
+            playerbaseargs = ' -infbuf -framedrop -sync audio '
     logging.debug('Player\'s basic command line: ' + args.player +
                   playerbaseargs)
     # CURL Session:
@@ -936,10 +1001,7 @@ if __name__ == '__main__':
         for mid in range(2):
             curlobj = pycurl.Curl()
             curlobj.setopt(pycurl.SHARE, session)
-            curlobj.setopt(pycurl.USERAGENT, 'PycURL/7.43 ytdash/0.18')
-            # User-Agent: PycURL/7.43.0.3 libcurl/7.52.1 OpenSSL/1.0.2t
-            # zlib/1.2.8 libidn2/0.16 libpsl/0.17.0 (+libidn2/0.16)
-            # libssh2/1.7.0 nghttp2/1.18.1 librtmp/2.3
+            curlobj.setopt(pycurl.USERAGENT, pycurl.version + ' YTdash/0.18')
             curlobj.setopt(pycurl.VERBOSE, 0)
             curlobj.setopt(pycurl.CONNECTTIMEOUT, 10)
             curlobj.setopt(pycurl.TIMEOUT, 30)
@@ -1229,7 +1291,8 @@ if __name__ == '__main__':
                         else:
                             print('Invalid input, only integers from 1' +
                                   ' to ' + str(len(items)) +
-                                  ' separated by commas are accepted...')
+                                  ' separated by commas, "n" or "q" are' +
+                                  ' allowed.')
                             break
                 logging.debug('Video IDs chosen: ' + str(videosidssel))
                 if len(videosidssel) >= len(answer):
@@ -1459,14 +1522,14 @@ if __name__ == '__main__':
         else:
             apipe = os.pipe()
             vpipe = os.pipe()
-            if args.player == 'mpv':
+            playerargs += ' fd://%s ' % vpipe[0]
+            if args.player[:3] == 'mpv':
                 # playerargs += '--audio-file=%s ' % audiodata[aid]['url']
                 playerargs += ' --audio-file=fd://%s ' % apipe[0]
-            elif args.player == 'vlc':
+            elif args.player[:3] == 'vlc':
                 # playerargs += '--input-slave="%s"' % audiodata[aid]['url']
                 playerargs += ' --input-slave=fd://%s ' % apipe[0]
             # playerargs += ' "%s" ' % videodata[vid]['url']
-            playerargs += ' fd://%s ' % vpipe[0]
             playerstdin = None
             playerfds = (apipe[0], vpipe[0])
             # playerfds = ()
