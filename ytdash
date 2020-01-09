@@ -1,17 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
-try:
-    import gi
-    gi.require_version('Gdk', '3.0')
-    from gi.repository import Gdk
-    w = Gdk.get_default_root_window()
-    maxwidth, maxheight = w.get_geometry()[2:4]
-    del gi
-except ImportError:
-    maxwidth, maxheight = 1360, 768
-    pass
-
 
 class Writer:
     def __init__(self, file):
@@ -758,11 +747,11 @@ if __name__ == '__main__':
     parser.add_argument('-maxband', '-mb', type=int, default=700,
                         help='max video bandwidth in kB/s to allow when ' +
                         ' possible (default: %(default)s)')
-    parser.add_argument('-maxheight', '-mh', type=int, default=maxheight,
+    parser.add_argument('-maxheight', '-mh', type=int, default=720,
                         choices=[144, 240, 360, 480, 720, 1080, 1440, 2160,
                                  4320],
                         help='max video heigth to allow (default: %(default)s)')
-    parser.add_argument('-maxwidth', '-mw', type=int, default=maxwidth,
+    parser.add_argument('-maxwidth', '-mw', type=int, default=1280,
                         choices=[256, 426, 640, 854, 1280, 1920, 2560, 3840,
                                  7680],
                         help='max video width to allow (default: %(default)s)')
@@ -873,6 +862,16 @@ if __name__ == '__main__':
     import shlex
     import json
     import html
+    # Try to detect native resolution to set the max video resolution to use:
+    try:
+        import gi
+        gi.require_version('Gdk', '3.0')
+        from gi.repository import Gdk
+        w = Gdk.get_default_root_window()
+        maxwidth, maxheight = w.get_geometry()[2:4]
+        del gi
+    except:
+        maxwidth, maxheight = args.maxwidth, args.maxheight
     global ffmpegmuxer, livecontent, live, otf, manifesturl, segsecs
     os.setpgrp()
     # Check directories used:
@@ -908,7 +907,7 @@ if __name__ == '__main__':
     console.setLevel(loglevel)
     logging.getLogger('').addHandler(console)
     ##
-    logging.debug('Resolution detected: %s x %s' % (maxwidth, maxheight))
+    logging.info('Maximum resolution to use: %s x %s' % (maxwidth, maxheight))
     # Check running processes for another instances:
     pslist = subprocess.check_output(shlex.split("ps -ax")).decode("utf-8")
     runcmd = re.findall('.*ytdash.*', pslist)
