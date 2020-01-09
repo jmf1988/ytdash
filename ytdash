@@ -672,7 +672,7 @@ if __name__ == '__main__':
     parser.add_argument('urls', metavar='URL|QUERY', type=str, nargs='+',
                         help='URLs or search queries of videos to play')
     parser.add_argument('--version', action='version',
-                        version='%(prog)s 0.18-alpha')
+                        version='%(prog)s 0.19-beta')
     parser.add_argument('-quiet', '-q', action='store_true',
                         help='enable quiet mode (default: %(default)s)')
     parser.add_argument('-onlyone', '-oo', action='store_true',
@@ -1000,7 +1000,7 @@ if __name__ == '__main__':
         for mid in range(2):
             curlobj = pycurl.Curl()
             curlobj.setopt(pycurl.SHARE, session)
-            curlobj.setopt(pycurl.USERAGENT, pycurl.version + ' YTdash/0.18')
+            curlobj.setopt(pycurl.USERAGENT, pycurl.version + ' YTdash/0.19')
             curlobj.setopt(pycurl.VERBOSE, 0)
             curlobj.setopt(pycurl.CONNECTTIMEOUT, 10)
             curlobj.setopt(pycurl.TIMEOUT, 30)
