@@ -118,19 +118,21 @@ optional arguments:
 </pre>
 Examples:
 
-To play a single video with id lrX6ktLg8WQ:
+To play a single video with id lrX6ktLg8WQ, these are all equivalent:
 - ytdash "https://www.youtube.com/watch?v=lrX6ktLg8WQ" or
 - ytdash "//youtube.com/watch?v=lrX6ktLg8WQ" or
 - ytdash "https://youtu.be/lrX6ktLg8WQ" or
 - ytdash "lrX6ktLg8WQ"
 
-To search a live video in a channel listing the first 10 results to choose or playing if only one live video found:
+To search for live videos that match the term "live+news" and return a max of 5 results to choose from:
+
+- ytdash -s live+news
+
+To search for live videos in a particular channel URL and return a max of 10 results to choose from, these are all equivalent:
 
 - ytdash "https://www.youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -maxresults 10
 - ytdash "//youtube.com/channel/UCqUowrZdd95X_L7prqCd22Q" -s -maxresults 10
 - ytdash "https://www.youtube.com/user/skynews" -s -maxresults 10
-
-are all equivalent.
 
 Extreme example:
 
