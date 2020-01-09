@@ -136,7 +136,7 @@ To search for live videos in a particular channel URL and return a max of 10 res
 
 Extreme example:
 
-To play first 5 videos in a channel one by one with a max height of 720, max FPS of 30, using a max bandwidth of 400 kB/s, with an offset, of -30 minutes and with bandwidth adaptative mode disabled:
+To play first 5 live videos if found in a particular channel one by one with a max height of 720, max FPS of 30, using a max bandwidth of 400 kB/s, with a time offset of 30 minutes ago and with bandwidth adaptative mode disabled:
 
 - ytdash "https://www.youtube.com/channel/UCSyg9cb3Iq-NtlbxqNB9wGw" -s -f -maxresults 5 -offset 30m -maxfps 30 -maxheight 720 -maxband 400
 
