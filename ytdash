@@ -429,7 +429,6 @@ def get_media(data):
         maxbytes = 0
     while True:
         url = baseurl + segmenturl
-        columns = os.get_terminal_size().columns
         rawheaders = BytesIO()
         try:
             if twbytes:
@@ -475,7 +474,6 @@ def get_media(data):
             curlerrnum = err.args[0]
             error = 1
             rawheaders.close()
-            print(' ' * columns, end='\r')
             if curlerrnum == 18:
                 logging.debug('Server closed connection with unknown' +
                               ' data remaining...')
@@ -494,7 +492,7 @@ def get_media(data):
             # Curlerror 28 is connection timeout, enables download resume:
             elif(curlerrnum == 7 or curlerrnum == 56 or curlerrnum == 28 or
                  curlerrnum == 52):
-                    print('Download interrupted.', end='\r')
+                    logging.debug('Download interrupted.')
                     if not interruptretries:
                         logging.info("Retries after interruption exhausted, " +
                                      "aborting...")
@@ -504,8 +502,8 @@ def get_media(data):
                     interrupted = 1
                     time.sleep(1)
             elif curlerrnum == 6:
-                messa = ('Could not resolve host. Internet connection issues?' +
-                         '\n5 seconds between retries...')
+                print(' ' * columns, end='\r')
+                messa = ('Could not resolve host. Internet connection issues?')
                 print(messa, end='\r')
                 time.sleep(5)
                 notify_send(messa, 5000)
@@ -872,7 +870,7 @@ if __name__ == '__main__':
         del gi
     except:
         maxwidth, maxheight = args.maxwidth, args.maxheight
-    global ffmpegmuxer, livecontent, live, otf, manifesturl, segsecs
+    global ffmpegmuxer, livecontent, live, otf, manifesturl, segsecs, columns
     os.setpgrp()
     # Check directories used:
     homedir = os.environ['HOME']
@@ -1072,7 +1070,10 @@ if __name__ == '__main__':
         videoid = None
         channelid = None
         userid = None
-        columns = os.get_terminal_size().columns
+        if sys.stdout.isatty():
+            columns = os.get_terminal_size().columns
+        else:
+            columns = 80
         # If given string is not a video id, check if search mode is enabled:
         if urlhost:
             if url.hostname[-8:] == "youtu.be":
@@ -1359,7 +1360,7 @@ if __name__ == '__main__':
         if live:
             if latencyclass[0] == 'ULTRA_LOW':
                 segsecs = 1
-                maxsegms = 3
+                maxsegms = 2
             elif latencyclass[0] == 'LOW':
                 segsecs = 2
             elif latencyclass[0] == 'NORMAL':
@@ -1607,7 +1608,8 @@ if __name__ == '__main__':
         pool = ThreadPoolExecutor(max_workers=2*defsegoffset)
         while True:
             starttime = time.time()
-            columns = os.get_terminal_size().columns
+            if sys.stdout.isatty():
+                columns = os.get_terminal_size().columns
             try:
                 # sequencenums = []
                 segmsresults = []
@@ -1888,13 +1890,12 @@ if __name__ == '__main__':
                     logging.debug('Bandsest2: ' + str(bandest2))
                     logging.debug('Bandsest2s: ' + str(bandest2s))
                     if not args.debug:
-                        print(' ' * columns, end='\r')
                         ptext = ('\rEstimated bandwidth Last/Avg: ' +
                                  '%skB/s' % bandest2[-1] +
                                  ' / %skB/s ' % bandest2avg +
-                                 ' - Delays Last/Avg: %ss / %ss' %
-                                 (delays[-1], delayavg))
-                        print(ptext[0:columns], end='\r', flush=True)
+                                 '- Delays Last/Avg: %ss / %ss' %
+                                 (delays[-1], delayavg))[:columns]
+                        print(ptext + (' ' * (columns - len(ptext))), end='\r')
                     logging.debug('X-Bandwidth-Avg: ' + str(bandwidths[0]))
                     logging.debug('X-Bandwidth-Est: ' + str(bandest[-1]) +
                                   ' - AVG: ' + str(bandestavg) + ' - sAVG: ' +
