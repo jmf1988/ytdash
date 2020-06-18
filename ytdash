@@ -663,6 +663,10 @@ def closepipes(totalpipes):
 
 
 if __name__ == '__main__':
+    import sys, os
+    # Disable non-blocking mode on stdin to avoid EOFError with input(), and
+    # potential security implications:
+    os.set_blocking(sys.stdin.fileno(), True)
     import argparse
     import re
     parser = argparse.ArgumentParser(prog='ytdash',
@@ -782,9 +786,8 @@ if __name__ == '__main__':
                         '(default: 3 segments)')
     global args
     args = parser.parse_args()
-    # Check versions needed:
-    import sys
     import subprocess
+    # Check platform and versions needed:
     message = 0
     if sys.platform != 'linux':
         message = "This script runs on Linux only."
@@ -854,7 +857,6 @@ if __name__ == '__main__':
     from logging.handlers import logging, RotatingFileHandler
     from io import BytesIO
     import certifi
-    import os
     import signal
     import time
     import shlex
