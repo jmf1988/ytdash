@@ -6,17 +6,21 @@ Required dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), pyth
 
 Python dependencies: pycurl and certifi
 
-Dependencies installation: 
+Quick installation of dependencies: 
 - Debian based:
 apt-get install python3 python3-pycurl python3-certifi ffmpeg mpv 
 
 - Optional dependencies: "fonts-symbola" and "libnotify-bin" packages for terminal/player titles/descriptions emojis and symbols support and native desktop notifications respectively.
 
-Note: The above installs distro version of pycurl that can be outdated and/or come with gnutls backend enabled by default, depending on the distro used, which may use more memory and cause some issues. To install pycurl with openssl backend that uses less memory and is more realiable do the following:
+That's all.
 
-- Install the required dependecies in debian/ubuntu to build pycurl with openssl backend instead (better performance):
+Optional installation of pycurl with openssl backend:
 
-  - apt-get install python3-dev libssl-dev libcurl4-openssl-dev python3-pip
+The above installs OS version of pycurl that can be outdated and/or come with gnutls backend enabled by default, depending on the distro used, which may use more memory and cause some issues. To install pycurl with openssl backend that uses less memory and is more realiable do the following:
+
+- Install the required dependecies in debian/ubuntu to build pycurl with openssl backend instead 
+
+  - apt-get install python3-dev libssl-dev libcurl4-openssl-dev [python3-pip]
 
 - Remove possible already installed packages with other methods:
 
@@ -26,9 +30,7 @@ Note: The above installs distro version of pycurl that can be outdated and/or co
 
   - PYCURL_SSL_LIBRARY=openssl pip3 install --no-cache-dir pycurl certifi [--user]
 
-That's all.
-
-Usage: 
+Ytdash command line usage: 
 <pre>
 usage: ytdash [-h] [--version] [-quiet] [-onlyone] [-kill] [-search]
               [-research] [-nonlive]
