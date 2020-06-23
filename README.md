@@ -16,9 +16,15 @@ Note: The above installs distro version of pycurl that can be outdated and/or co
 
 - Install the required dependecies in debian/ubuntu to build pycurl with openssl backend instead (better performance):
 
-  - apt-get install python3-dev libssl-dev libcurl4-openssl-dev python3-pip && apt-get remove libcurl4-gnutls-dev
+  - apt-get install python3-dev libssl-dev libcurl4-openssl-dev python3-pip
 
-  - pip3 uninstall pycurl && PYCURL_SSL_LIBRARY=openssl pip3 install pycurl certifi [--user] --no-cache-dir
+- Remove possible already installed packages with other methods:
+
+  - apt-get remove libcurl4-gnutls-dev && apt-get remove python3-pycurl python3-certifi && pip3 uninstall pycurl certifi
+  
+- Build and install pycurl with openssl backend:
+
+  - PYCURL_SSL_LIBRARY=openssl pip3 install --no-cache-dir pycurl certifi [--user]
 
 That's all.
 
