@@ -16,7 +16,7 @@ That's all.
 
 Optional installation of pycurl with openssl backend:
 
-The above installs OS version of pycurl that can be outdated and/or come with gnutls backend enabled by default, depending on the distro used, which may use more memory and cause some issues. To install pycurl with openssl backend that uses less memory and is more realiable do the following:
+The above installs OS version of pycurl that can be outdated and/or come with gnutls backend enabled by default, depending on the distro used, which may use more memory and cause some issues. To install pycurl with openssl backend that uses less memory and is more realiable using pip tool do the following:
 
 - Install the required dependecies in debian/ubuntu to build pycurl with openssl backend instead 
 
