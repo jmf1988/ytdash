@@ -12,13 +12,13 @@ apt-get install python3 python3-pycurl python3-certifi ffmpeg mpv
 
 - Optional dependencies: "fonts-symbola" and "libnotify-bin" packages for terminal/player titles/descriptions emojis and symbols support and native desktop notifications respectively.
 
-Note: The above installs distro version of pycurl that can be outdated and come with gnutls backend enabled by default, which may use more memory and cause some issues. To install pycurl with openssl backend that uses less memory and is more realiable do the following:
+Note: The above installs distro version of pycurl that can be outdated and/or come with gnutls backend enabled by default, depending on the distro used, which may use more memory and cause some issues. To install pycurl with openssl backend that uses less memory and is more realiable do the following:
 
-- Install dependecies on debian to compile libcurl to use openssl backend (better performance):
+- Install the required dependecies in debian/ubuntu to build pycurl with openssl backend instead (better performance):
 
-apt-get install python3-dev libssl-dev libcurl4-openssl-dev python3-pip
+  - apt-get install python3-dev libssl-dev libcurl4-openssl-dev python3-pip && apt-get remove libcurl4-gnutls-dev
 
-PYCURL_SSL_LIBRARY=openssl pip3 install pycurl certifi --user
+  - pip3 uninstall pycurl && PYCURL_SSL_LIBRARY=openssl pip3 install pycurl certifi [--user] --no-cache-dir
 
 That's all.
 
