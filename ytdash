@@ -1487,6 +1487,7 @@ if __name__ == '__main__':
         logging.info('* Title: %s' % title)
         logging.info('* Author: %s' % author)
         logging.info('#'*min(columns, 80))
+        notify_send("Author: " + author, 5000, title)
         if not args.nodescription and description:
             logging.info('* Description: \n%s' % description)
         logging.debug("Segment duration in secs: " + str(segsecs))
