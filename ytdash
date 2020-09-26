@@ -1246,7 +1246,9 @@ if __name__ == '__main__':
             if items:
                 print("Videos found:")
             else:
-                print("No videos found.")
+                messa="No videos found for \"%s\"." % urls[0]
+                print(messa)
+                notify_send(messa, 5000)
                 del urls[0]
                 continue
             itemnum = 1
