@@ -20,7 +20,7 @@ The above installs OS version of pycurl that can be outdated and/or come with gn
 
 - Install the required dependecies in debian/ubuntu to build pycurl with openssl backend instead 
 
-  - apt-get install python3-dev libssl-dev libcurl4-openssl-dev [python3-pip]
+  - apt-get install python3-dev gcc libssl-dev libcurl4-openssl-dev [python3-pip]
 
 - Remove possible already installed packages with other methods:
 
