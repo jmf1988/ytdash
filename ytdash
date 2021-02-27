@@ -742,8 +742,8 @@ if __name__ == '__main__':
     parser.add_argument('-nodescription', '-nd', action='store_true',
                         help='Do not show video descriptions on the '
                         'terminal/player (default: %(default)s)')
-    parser.add_argument('-novolnor', '-nv', action='store_true',
-                        help='disable volume normalization ' +
+    parser.add_argument('-volnor', '-vn', action='store_true',
+                        help='enable volume normalization ' +
                         ' for all videos (mpv). (default: %(default)s)')
     parser.add_argument('-maxfps', '-mf', type=int, default=60,
                         help='max video fps to allow (default: %(default)s)')
@@ -969,7 +969,7 @@ if __name__ == '__main__':
         playerbaseargs = ' --input-terminal=no '
         #              ' --rebase-start-time=yes'
         #              '--profile=low-latency'
-        if not args.novolnor:
+        if args.volnor:
             playerbaseargs += ' --af lavfi="[alimiter=limit=0.1:level=enabled]"'
         if args.fullscreen:
             playerbaseargs += ' --fullscreen '
