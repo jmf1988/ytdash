@@ -93,7 +93,7 @@ optional arguments:
                         player bin name, (default: mpv)
   -nodescription, -nd   Do not show video descriptions on the terminal/player
                         (default: False)
-  -novolnor, -nv        disable volume normalization for all videos (mpv).
+  -volnor, -vn          Enable volume normalization for all videos (mpv).
                         (default: False)
   -maxfps MAXFPS, -mf MAXFPS
                         max video fps to allow (default: 60)
