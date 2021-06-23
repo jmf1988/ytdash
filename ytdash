@@ -105,7 +105,7 @@ def download(curlobj, url, compressed=0, rangebytes=(0, ''), bytesresponse=0,
 
 def get_mediadata(curlobj, videoid, test=1, checkiflive=0):
     # https://www.youtube.com/oembed?url=[Youtubewatchurl]&format=json
-    url = 'https://www.youtube.com/get_video_info?html5=1&video_id=' + videoid
+    url = 'https://www.youtube.com/get_video_info?html5=1&c=TVHTML5&cver=6.20180913&video_id=' + videoid
     logging.debug('Opening URL: %s ' % url)
     videoquery = download(curlobj, url)
     if not videoquery:
