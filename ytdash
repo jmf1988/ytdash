@@ -105,12 +105,29 @@ def download(curlobj, url, compressed=0, rangebytes=(0, ''), bytesresponse=0,
 
 def get_mediadata(curlobj, videoid, test=1, checkiflive=0):
     # https://www.youtube.com/oembed?url=[Youtubewatchurl]&format=json
-    url = 'https://www.youtube.com/get_video_info?html5=1&c=TVHTML5&cver=6.20180913&video_id=' + videoid
+    # New api to get the data but with Unknown key
+    url = 'https://www.youtube.com/youtubei/v1/player?key=' + 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8'
+    curlobj.setopt(pycurl.HTTPHEADER, ['Content-Type: application/json'])
+    curlobj.setopt(pycurl.POST, 1)
+    curlobj.setopt(pycurl.ENCODING, 'gzip, deflate')
+    postdata =  {"context": {"client": {"hl": "en", "clientName": "WEB",
+                                        "clientVersion": "2.20210721.00.00",
+                                        "mainAppWebInfo": {
+                                                "graftUrl": "/watch?v=" + videoid
+                                               }
+                                        }
+                            },
+                "videoId": videoid
+                }
+    curlobj.setopt(curlobj.POSTFIELDS, json.dumps(postdata))
     logging.debug('Opening URL: %s ' % url)
-    videoquery = download(curlobj, url)
-    if not videoquery:
+    res = download(curlobj, url)
+    curlobj.setopt(pycurl.HTTPHEADER, None)
+    curlobj.setopt(pycurl.POST, 0)
+    if not res:
+        logging.info('Could not get video basic information...')
         return 2
-    ytdict = parse_qs(videoquery, strict_parsing=False)
+    ytdict = json.loads(res)
     if ytdict:
         metadata = {}
         otf = False
@@ -122,9 +139,9 @@ def get_mediadata(curlobj, videoid, test=1, checkiflive=0):
     else:
         logging.debug('Could not get main dictionary...')
         return 2
-    ytpresp = ytdict.get('player_response', 0)
+    ytpresp = ytdict
     if ytpresp:
-        ytpresp = json.loads(ytpresp[0])
+        #ytpresp = json.loads(ytpresp[0])
         playable = ytpresp.get('playabilityStatus')
         pstatus = playable.get('status')
         reason = playable.get('reason')
