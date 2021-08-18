@@ -364,8 +364,8 @@ def get_mediadata(curlobj, videoid, test=1, checkiflive=0):
             videoband = int(videodata[idx].attrib.get('bandwidth', 0))
         else:
             videoband = 0
-        if(videofps > args.maxfps or videoheight > args.maxheight
-           or videowidth > args.maxwidth or
+        if(videofps > args.maxfps or videoheight > maxheight
+           or videowidth > maxwidth or
            videoband / 8 > args.maxband * 1024):
             del videodata[idx]
         else:
@@ -764,17 +764,13 @@ if __name__ == '__main__':
                         ' for all videos (mpv). (default: %(default)s)')
     parser.add_argument('-maxfps', '-mf', type=int, default=60,
                         help='max video fps to allow (default: %(default)s)')
-    parser.add_argument('-maxband', '-mb', type=int, default=700,
+    parser.add_argument('-maxband', '-mb', type=int, default=10000000,
                         help='max video bandwidth in kB/s to allow when ' +
                         ' possible (default: %(default)s)')
-    parser.add_argument('-maxheight', '-mh', type=int, default=720,
-                        choices=[144, 240, 360, 480, 720, 1080, 1440, 2160,
-                                 4320],
-                        help='max video heigth to allow (default: %(default)s)')
-    parser.add_argument('-maxwidth', '-mw', type=int, default=1280,
-                        choices=[256, 426, 640, 854, 1280, 1920, 2560, 3840,
-                                 7680],
-                        help='max video width to allow (default: %(default)s)')
+    parser.add_argument('-maxheight', '-mh', type=int, default=None,
+                        help='maximum video height to allow')
+    parser.add_argument('-maxwidth', '-mw', type=int, default=None,
+                        help='maximum video width to allow ')
     parser.add_argument('-audioquality', '-aq', type=int, default=1,
                         choices=[0, 1, -1],
                         help='Audio quality to enable if available' +
@@ -880,16 +876,6 @@ if __name__ == '__main__':
     import shlex
     import json
     import html
-    # Try to detect native resolution to set the max video resolution to use:
-    try:
-        import gi
-        gi.require_version('Gdk', '3.0')
-        from gi.repository import Gdk
-        w = Gdk.get_default_root_window()
-        maxwidth, maxheight = w.get_geometry()[2:4]
-        del gi
-    except:
-        maxwidth, maxheight = args.maxwidth, args.maxheight
     global ffmpegmuxer, livecontent, live, otf, manifesturl, segsecs, columns
     os.setpgrp()
     # Check directories used:
@@ -925,7 +911,41 @@ if __name__ == '__main__':
     console.setLevel(loglevel)
     logging.getLogger('').addHandler(console)
     ##
-    logging.info('Maximum resolution to use: %s x %s' % (maxwidth, maxheight))
+    # Try to detect native resolution to set the max video resolution to use:
+    natwidth, natheight = 0, 0
+    logging.debug("Trying to detect native resolution...")
+    try:
+        import gi
+    except:
+        logging.debug("Exception importing gi library")
+    else:
+        try:
+            gi.require_version('Gdk', '3.0')
+            from gi.repository import Gdk
+            w = Gdk.get_default_root_window()
+            natwidth, natheight = w.get_geometry()[2:4]
+            if not natwidth or not natheight:
+                logging.debug("Detected resolution from gi is zero or None")
+        except:
+            logging.debug("Exception getting resolution with gi library")
+        del gi
+    if args.maxwidth is None:
+        if not natwidth:
+            # default fallback width:
+            maxwidth = 1280
+        else:
+            maxwidth = natwidth
+    else:
+        maxwidth = args.maxwidth
+    if args.maxheight is None:
+        if not natheight:
+            # default fallback height:
+            maxheight = 720
+        else:
+            maxheight = natheight
+    else:
+        maxheight = args.maxheight
+    logging.info('Maximum video resolution allowed: %s x %s' % (maxwidth, maxheight))
     # Check running processes for another instances:
     pslist = subprocess.check_output(shlex.split("ps -ax")).decode("utf-8")
     runcmd = re.findall('.*ytdash.*', pslist)
