@@ -32,20 +32,13 @@ The above installs OS version of pycurl that can be outdated and/or come with gn
 
 Ytdash command line usage: 
 <pre>
-usage: ytdash [-h] [--version] [-quiet] [-onlyone] [-kill] [-search]
-              [-research] [-nonlive]
-              [-sortby {relevance,viewCount,videoCount,date,rating,title,rating}]
-              [-eventtype {live,upcoming,completed}]
-              [-safesearch {moderate,none,strict}]
-              [-duration {any,long,medium,short}]
-              [-videotype {any,episode,movie}]
-              [-type {video,channel,playlist}] [-definition {hd,sd,any}]
-              [-license {creativeCommon,youtube,any}] [-playlist]
-              [-fullscreen] [-maxresults MAXRESULTS] [-debug] [-player PLAYER]
-              [-nodescription] [-novolnor] [-maxfps MAXFPS] [-maxband MAXBAND]
-              [-maxheight {144,240,360,480,720,1080,1440,2160,4320}]
-              [-maxwidth {256,426,640,854,1280,1920,2560,3840,7680}]
-              [-audioquality {0,1,-1}] [-ffmpeg FFMPEG] [-autoplay]
+usage: ytdash [-h] [--version] [-quiet] [-onlyone] [-kill] [-search] [-research] [-nonlive]
+              [-sortby {relevance,viewCount,videoCount,date,rating,title,rating}] [-eventtype {live,upcoming,completed}]
+              [-safesearch {moderate,none,strict}] [-duration {any,long,medium,short}] [-videotype {any,episode,movie}]
+              [-type {video,channel,playlist}] [-definition {hd,sd,any}] [-license {creativeCommon,youtube,any}] [-playlist]
+              [-fullscreen] [-maxresults MAXRESULTS] [-debug] [-player PLAYER] [-nodescription] [-volnor] [-maxfps MAXFPS]
+              [-keeplowfps] [-maxband MAXBAND] [-maxheight MAXHEIGHT] [-maxwidth MAXWIDTH] [-audioquality AUDIOQUALITY]
+              [-preferaudiocodec {opus,mp4a,none}] [-prefervideocodec {avc1,vp9,av01}] [-ffmpeg FFMPEG] [-autoplay]
               [-reallive] [-preferquality] [-fixed] [-offset OFFSET]
               URL|QUERY [URL|QUERY ...]
 
@@ -58,18 +51,14 @@ optional arguments:
   -h, --help            show this help message and exit
   --version             show program's version number and exit
   -quiet, -q            enable quiet mode (default: False)
-  -onlyone, -oo         Only one instance of ytdash can be running. (default:
-                        False)
-  -kill, -k             First terminate all other running instances of ytdash.
-                        (default: False)
-  -search, -s           search mode, results cache enabled if searched less
-                        than 24hs ago, which saves YouTube daily quota,
+  -onlyone, -oo         Only one instance of ytdash can be running. (default: False)
+  -kill, -k             First terminate all other running instances of ytdash. (default: False)
+  -search, -s           search mode, results cache enabled if searched less than 24hs ago, which saves YouTube daily quota,
                         recommended) (default: False)
   -research, -rs        Search with cached results disabled. (default: False)
   -nonlive, -nl         search also for non-live videos (default: False)
   -sortby {relevance,viewCount,videoCount,date,rating,title,rating}, -sb {relevance,viewCount,videoCount,date,rating,title,rating}
-                        sorting order for the search results (default:
-                        relevance)
+                        sorting order for the search results (default: relevance)
   -eventtype {live,upcoming,completed}, -et {live,upcoming,completed}
                         filter results by live event type(default: live)
   -safesearch {moderate,none,strict}, -ss {moderate,none,strict}
@@ -91,38 +80,33 @@ optional arguments:
   -debug, -d            enable debug mode (default: False)
   -player PLAYER, -p PLAYER
                         player bin name, (default: mpv)
-  -nodescription, -nd   Do not show video descriptions on the terminal/player
-                        (default: False)
-  -volnor, -vn          Enable volume normalization for all videos (mpv).
-                        (default: False)
+  -nodescription, -nd   Do not show video descriptions on the terminal/player (default: False)
+  -volnor, -vn          enable volume normalization for all videos (mpv). (default: False)
   -maxfps MAXFPS, -mf MAXFPS
                         max video fps to allow (default: 60)
+  -keeplowfps, -klf     Do not not discard lower fps sources for each video resolution if many available. (default: False)
   -maxband MAXBAND, -mb MAXBAND
-                        max video bandwidth in kB/s to allow when possible
-                        (default: 700)
-  -maxheight {144,240,360,480,720,1080,1440,2160,4320}, -mh {144,240,360,480,720,1080,1440,2160,4320}
-                        max video heigth to allow (default: 768)
-  -maxwidth {256,426,640,854,1280,1920,2560,3840,7680}, -mw {256,426,640,854,1280,1920,2560,3840,7680}
-                        max video width to allow (default: 1360)
-  -audioquality {0,1,-1}, -aq {0,1,-1}
-                        Audio quality to enable if available, 0=lowest,
-                        1=medium, -1=highest. (default: 1)
+                        max video bandwidth in kB/s to allow when available (default: 100000000)
+  -maxheight MAXHEIGHT, -mh MAXHEIGHT
+                        maximum video height to allow
+  -maxwidth MAXWIDTH, -mw MAXWIDTH
+                        maximum video width to allow
+  -audioquality AUDIOQUALITY, -aq AUDIOQUALITY
+                        Audio quality to enable if available, 0=lowest, 1-int=medium, -1=highest. (default: -1)
+  -preferaudiocodec {opus,mp4a,none}, -pac {opus,mp4a,none}
+                        Audio codec to priorize for non-live streams, if a similar quality is available. (default: none)
+  -prefervideocodec {avc1,vp9,av01}, -pvc {avc1,vp9,av01}
+                        Video codec to priorize for non-live streams, if available. (default: avc1)
   -ffmpeg FFMPEG, -ff FFMPEG
                         ffmpeg location route (default: ffmpeg)
-  -autoplay, -a         Autoplay all results returned by search mode (default:
-                        False)
-  -reallive, -r         Enables lowest latency possible with all types of live
-                        streams. (default: False)
-  -preferquality, -pq   Prioritize quality over latency in bandwidth-adaptive
-                        enabled video streams (default: False)
-  -fixed, -f            Play a fixed video quality instead of doing bandwidth
-                        adaptive quality change, This is the max set from
-                        options (default: False)
+  -autoplay, -a         Autoplay all results returned by search mode (default: False)
+  -reallive, -r         Enables lowest latency possible with all types of live streams. (default: False)
+  -preferquality, -pq   Prioritize quality over latency in bandwidth-adaptive enabled video streams (default: False)
+  -fixed, -f            Play a fixed video quality instead of doing bandwidth adaptive quality change, This is the max set
+                        from options (default: False)
   -offset OFFSET, -o OFFSET
-                        Time offset from where the playback start,(i.e: -o 2h,
-                        -o 210m, -offset 3000s, for hours, minutes and seconds
-                        respectively.) (default: 3 segments)
-
+                        Time offset from where the playback start,(i.e: -o 2h, -o 210m, -offset 3000s, for hours, minutes
+                        and seconds respectively.) (default: 3 segments)
 </pre>
 Examples:
 
