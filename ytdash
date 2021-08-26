@@ -146,8 +146,8 @@ def get_mediadata(curlobj, videoid, test=1, checkiflive=0):
         pstatus = playable.get('status')
         reason = playable.get('reason')
         metadata['reason'] = reason
-        if pstatus and pstatus == 'UNPLAYABLE':
-            logging.info('Video status: UNPLAYABLE')
+        if not pstatus == 'OK':
+            logging.info('Video status: ' + pstatus)
             if reason:
                 href = re.findall(r'(?<=href=").*?(?=")', reason)
                 if href:
@@ -207,22 +207,34 @@ def get_mediadata(curlobj, videoid, test=1, checkiflive=0):
         adaptivefmts = streamingdata.get('adaptiveFormats')
         if adaptivefmts:
             # logging.debug('ADAPTIVEFMTS: ' + str(adaptivefmts))
-            adaptivefmts.sort(key=lambda fmt: fmt.get('bitrate', 0))
             nomanaudiodata = []
             nomanvideodata = []
             for fid in range(len(adaptivefmts)):
-                mtype = adaptivefmts[fid]['mimeType'].split('; ')
-                if mtype[0] == 'audio/mp4' and mtype[1][8:11] == 'mp4':
+                # Split MimeType and codecs from mimetype:
+                mimetype, codecs = adaptivefmts[fid]['mimeType'].split('; ')
+                adaptivefmts[fid]['codecs'] = codecs[8:-1]
+                if mimetype[:5] == 'audio':
+                    # Fix different label name for same thing:
+                    audiosrate = adaptivefmts[fid].get('audioSampleRate')
+                    if audiosrate:
+                        adaptivefmts[fid]['audioSamplingRate'] = audiosrate
+                        del adaptivefmts[fid]['audioSampleRate']
                     nomanaudiodata.append(adaptivefmts[fid])
-                elif mtype[0] == 'video/mp4' and mtype[1][8:11] == 'avc':
+                elif mimetype[:5] == 'video':
+                    # Fix different label name for same thing:
+                    videofps = adaptivefmts[fid].get('fps')
+                    if videofps:
+                        adaptivefmts[fid]['frameRate'] = videofps
+                        del adaptivefmts[fid]['fps']
                     streamtype = adaptivefmts[fid].get('type')
                     if streamtype != 'FORMAT_STREAM_TYPE_OTF':
                         nomanvideodata.append(adaptivefmts[fid])
                     else:
                         otf = True
+            # Order audio and video differently:
+            nomanaudiodata.sort(key=lambda fmt: fmt.get('bitrate', 0))
+            nomanvideodata.sort(key=lambda fmt: fmt.get('height', 0))
             # logging.debug('Videodata: %s' % nomanvideodata)
-            if streamtype == 'FORMAT_STREAM_TYPE_OTF':
-                otf = True
             metadata['Otf'] = otf
         logging.debug('OTF: ' + str(otf))
     else:
@@ -234,19 +246,6 @@ def get_mediadata(curlobj, videoid, test=1, checkiflive=0):
         if latencyclass:
             latencyclass = re.findall('(?<=LATENCY_).+', latencyclass)
             metadata['latencyClass'] = latencyclass[0]
-    if adaptivefmts and (not livecontent or not manifesturl or otf):
-        audiodata = nomanaudiodata
-        videodata = nomanvideodata
-        cipher = 0
-        nourls = 0
-        if not audiodata[-1].get('url') or not videodata[-1].get('url'):
-            logging.debug('Media Urls could not be found.')
-            nourls = 1
-            if audiodata[-1].get('cipher') or videodata[-1].get('cipher'):
-                logging.debug('Ciphered url/s.')
-                cipher = 1
-        if nourls or cipher:
-            return 2
     # logging Details:
     logging.debug("Is live: %s" % live)
     logging.debug('postLiveDVR: ' + str(postlivedvr))
@@ -263,6 +262,22 @@ def get_mediadata(curlobj, videoid, test=1, checkiflive=0):
     logging.debug('latencyclass: ' + str(latencyclass))
     logging.debug('live readahead secs: ' + str(liveaheadsecs))
     logging.debug('live readahead chunks: ' + str(liveaheadchunk))
+    if adaptivefmts and (not livecontent or not manifesturl or otf):
+        audiodata = nomanaudiodata
+        videodata = nomanvideodata
+        cipher = 0
+        nourls = 0
+        logging.debug('AUdiodata: %s' % nomanaudiodata)
+
+        if not audiodata[-1].get('url') or not videodata[-1].get('url'):
+            logging.debug('Url attribute could not be found.')
+            nourls = 1
+            if audiodata[-1].get('signatureCipher') or videodata[-1].get('signatureCipher'):
+                logging.debug('Ciphered url/s.')
+                logging.info('Protected videos are not supported.')
+                cipher = 1
+        if nourls or cipher:
+            return 2
     # Abort if live videos were requested, and video is not:
     if not live and not args.nonlive:
         if livecontent:
@@ -277,12 +292,13 @@ def get_mediadata(curlobj, videoid, test=1, checkiflive=0):
         if otf:
             if not lowlatency:
                 segsecs = 5
-            ida = 0
+            ida = 1
             idv = 1
         else:
             ida = 1
             idv = 2
         fps_string = 'frameRate'
+        audioratestring = 'audioSamplingRate'
         manifesturl += '/keepalive/yes'
         logging.debug("Manifest URL: %s" % manifesturl)
         # Get the Manifest data, compression enabled:
@@ -303,8 +319,9 @@ def get_mediadata(curlobj, videoid, test=1, checkiflive=0):
         # Filter out non-mp4 formats becuase do not work yet:
         AdaptationSets = Period[1:]
         for AdaptationSet in AdaptationSets:
-            if AdaptationSet.get('mimeType') == 'audio/mp4':
+            if AdaptationSet.get('mimeType')[:5] == 'audio':
                 AdaptationSetAudio = AdaptationSet
+            # Only know how to anex h264 fragments for live/postlive sreams:
             elif AdaptationSet.get('mimeType') == 'video/mp4':
                 AdaptationSetVideo = AdaptationSet
         AudioRole = AdaptationSetAudio[0]
@@ -338,43 +355,124 @@ def get_mediadata(curlobj, videoid, test=1, checkiflive=0):
         # Sort Audio and Video qualities by bandwidth:
         for mtype in audiodata, videodata:
             mtype.sort(key=lambda mid: int(mid.attrib.get('bandwidth', 0)))
-        if not otf:
-            testurl = audiodata[0][1].text
+        testurl = audiodata[ida][1].text
+        if otf:
+            testurl += 'sq/0'
+            print('audiodata:' + str(audiodata[1][1].text))
     else:
         logging.debug('Dash Manifest URL not available.')
-        logging.info('Bandwidth adaptative mode not available.')
+        logging.info('Bandwidth adaptive mode not available.')
         if adaptivefmts:
             testurl = audiodata[0].get('url')
-            logging.debug('Manifestless adaptative formats available.')
-            fps_string = 'fps'
+            logging.debug('Manifestless adaptive formats available.')
             segsecs = 5
             buffersecs, earliestseqnum, startnumber = 0, 0, 0
         else:
-            logging.debug('No adaptative video formats found.')
+            logging.debug('No adaptive video formats found.')
             return 2
     totvqua = len(videodata)
+    vtext = "Video qualities available: "
     # Filter video by max height, width, fps and bandwidth:
     idx = 0
-    while idx < len(videodata):
-        # logging.info(videodata[idx].get('bandwidth'))
-        videofps = int(videodata[idx].get(fps_string, 0))
+    videobyres = {}
+    for idx in range(len(videodata)):
+        videofps = int(videodata[idx].get('frameRate', 0))
         videoheight = int(videodata[idx].get('height', 0))
         videowidth = int(videodata[idx].get('width', 0))
+        videocodec = videodata[idx].get('codecs', '0').split('.')[0]
+        vres = str(videowidth) + 'x' + str(videoheight)
+        vresfps = str(videowidth) + 'x' + str(videoheight) + 'p' + str(videofps)
+        vresfpscodecs = vresfps + ' (' + videocodec
+        ovcodecs = re.findall(vresfps + " \((.*?)\)", vtext)
+        if ovcodecs:
+            vresfpscodecs += ',' + ovcodecs[0] + ')'
+            vtext = re.sub(vresfps + ' \(.*?\)', vresfpscodecs, vtext)
+        else:
+            vresfpscodecs += ')'
+            vtext += vresfpscodecs + ', '
         if livecontent and manifesturl and not otf:
             videoband = int(videodata[idx].attrib.get('bandwidth', 0))
         else:
             videoband = 0
-        if(videofps > args.maxfps or videoheight > maxheight
-           or videowidth > maxwidth or
-           videoband / 8 > args.maxband * 1024):
-            del videodata[idx]
+
+        if( videofps > args.maxfps or videoheight > maxheight or
+            videowidth > maxwidth or videoband / 8 > args.maxband * 1024):
+            continue
         else:
-            idx += 1
-    if len(videodata) < 1:
+            maxvquality = vresfpscodecs
+            vresdict = videobyres.get(vres, {})
+            # Creates list inside fps dicts inside video resolution dict:
+            if vresdict:
+                if vresdict.get(str(videofps)):
+                    videobyres[vres][str(videofps)].append(videodata[idx])
+                else:
+                    videobyres[vres][str(videofps)] = [videodata[idx]]
+            else:
+                videobyres[vres] = {str(videofps): [videodata[idx]]}
+    if len(videodata) < 1 or len(videobyres.keys()) < 1:
         logging.info('No video found with the requested properties.')
         return 2
-    logging.info("Video qualities selected: %s/%s" % (len(videodata), totvqua))
-    logging.info("Audio qualities selected: %s/%s" % ('1', len(audiodata)))
+    # Get max video resolution and fps from dict keys:
+    allvideores = list(videobyres.keys())
+    videodata = []
+    for res in allvideores:
+        if not args.keeplowfps:
+            # Let only max fps sources over codec for a resolution:
+            vfps = [max(list(videobyres[res].keys()))]
+        else:
+            vfps = list(videobyres[res].keys())
+        for fps in vfps:
+            codecnum = len(videobyres[res][fps])
+            # print('Number of codecs for the fps: ' + str(codecnum))
+            for cid in range(len(videobyres[res][fps])):
+                vcodec = videobyres[res][fps][cid].get('codecs', '0').split('.')[0]
+                # Left only preferred codec or the last one in list:
+                if vcodec == args.prefervideocodec or codecnum < 2:
+                    videodata.append(videobyres[res][fps][cid])
+                    continue
+                else:
+                    codecnum -= 1
+    vtext = vtext[:-2] + '.'
+    if live or postlivedvr:
+        slabel = ' <<<(MAX)'
+    else:
+        slabel = ' (*)'
+    # Print all video qualities available:
+    logging.info(vtext.replace(maxvquality, maxvquality + slabel))
+    aid = min(max(-len(audiodata),
+                  args.audioquality),
+              len(audiodata) - 1)
+    atext = "Audio qualities available: "
+    for tid in range(len(audiodata)):
+        if not manifesturl or otf:
+            audioelem = audiodata[tid]
+            channels = str(audioelem.get('audioChannels', '0'))
+        else:
+            audioelem = audiodata[tid].attrib
+            channels = str(audiodata[tid][0].get('value', '0'))
+        acodec = audioelem.get('codecs', '0').split('.')[0]
+        bitrate = round(int(audioelem.get('bitrate', 0))/1000)
+        samplingrate = audioelem.get('audioSamplingRate', '0')
+        aqualitystr = samplingrate + 'Hz ' + channels + 'ch '
+        if bitrate:
+            aqualitystr += str(bitrate) + 'kbps '
+        aqualitystr += '(' + acodec + ')'
+        audioelem['audioQualityStr'] = aqualitystr
+        atext += aqualitystr + ', '
+    atext = atext[:-2] + '.'
+    aqualityselected = audiodata[aid].get('audioQualityStr')
+    # Delete audio sources without preferred codec (args.preferaudiocodec)
+    # if closest similar previous quality with preferred codec available:
+    if(len(audiodata) > 1 and aid != 0 and aid <= len(audiodata) - 1 and
+       aid > -len(audiodata) and args.preferaudiocodec != 'none'):
+        acodec = audiodata[aid].get('codecs').split('.')[0]
+        pacodec = audiodata[aid - 1].get('codecs').split('.')[0]
+        if acodec != args.preferaudiocodec and pacodec == args.preferaudiocodec:
+            logging.info('Audio codec ' + pacodec + ' preferred over ' +
+                         acodec + ' (-pac option)')
+            aqualityselected = audiodata[aid-1].get('audioQualityStr')
+            del audiodata[-1]
+    logging.info(atext.replace(aqualityselected, aqualityselected + ' (*)'))
     # Test for url health:
     if test:
         if postlivedvr:
@@ -387,6 +485,7 @@ def get_mediadata(curlobj, videoid, test=1, checkiflive=0):
             return 2
         else:
             logging.debug("The URL seems healthy.")
+    # Return processed data:
     return (latencyclass, audiodata, videodata, buffersecs, earliestseqnum,
             startnumber, metadata, segsecs)
 
@@ -558,7 +657,7 @@ def get_media(data):
         speed = curlobj.getinfo(pycurl.SPEED_DOWNLOAD)
         totaltime = curlobj.getinfo(pycurl.TOTAL_TIME)
         conntime = curlobj.getinfo(pycurl.CONNECT_TIME)
-        if contenttype == 'video/mp4':
+        if contenttype[:5] == 'video':
             bandwidthavg = int(int(headers.get('X-Bandwidth-Avg', 0))/1024)
             bandwidthest = int(int(headers.get('X-Bandwidth-Est', 0))/1024)
             bandwidthest2 = int(int(headers.get('X-Bandwidth-Est2', 0))/1024)
@@ -764,18 +863,30 @@ if __name__ == '__main__':
                         ' for all videos (mpv). (default: %(default)s)')
     parser.add_argument('-maxfps', '-mf', type=int, default=60,
                         help='max video fps to allow (default: %(default)s)')
-    parser.add_argument('-maxband', '-mb', type=int, default=10000000,
+    parser.add_argument('-keeplowfps', '-klf', action='store_true',
+                        help='Do not not discard lower fps sources for' +
+                        ' each video resolution if many available.' +
+                        ' (default: %(default)s)')
+    parser.add_argument('-maxband', '-mb', type=int, default=100000000,
                         help='max video bandwidth in kB/s to allow when ' +
-                        ' possible (default: %(default)s)')
+                        ' available (default: %(default)s)')
     parser.add_argument('-maxheight', '-mh', type=int, default=None,
                         help='maximum video height to allow')
     parser.add_argument('-maxwidth', '-mw', type=int, default=None,
                         help='maximum video width to allow ')
-    parser.add_argument('-audioquality', '-aq', type=int, default=1,
-                        choices=[0, 1, -1],
+    parser.add_argument('-audioquality', '-aq', type=int, default=-1,
                         help='Audio quality to enable if available' +
-                        ', 0=lowest, 1=medium, -1=highest. ' +
+                        ', 0=lowest, 1-int=medium, -1=highest. ' +
                         '(default: %(default)s)')
+    parser.add_argument('-preferaudiocodec', '-pac', type=str, default='none',
+                        choices=['opus', 'mp4a', 'none'],
+                        help='Audio codec to priorize for non-live streams, '+
+                        'if a similar quality is available. ' +
+                        '(default: %(default)s)')
+    parser.add_argument('-prefervideocodec', '-pvc', type=str, default='avc1',
+                        choices=['avc1', 'vp9', 'av01'],
+                        help='Video codec to priorize for non-live streams, ' +
+                        ' if available. (default: %(default)s)')
     parser.add_argument('-ffmpeg', '-ff', type=str, default='ffmpeg',
                         help='ffmpeg location route (default: %(default)s)')
     parser.add_argument('-autoplay', '-a', action='store_true',
@@ -876,6 +987,7 @@ if __name__ == '__main__':
     import shlex
     import json
     import html
+    from datetime import datetime
     global ffmpegmuxer, livecontent, live, otf, manifesturl, segsecs, columns
     os.setpgrp()
     # Check directories used:
@@ -945,7 +1057,8 @@ if __name__ == '__main__':
             maxheight = natheight
     else:
         maxheight = args.maxheight
-    logging.info('Maximum video resolution allowed: %s x %s' % (maxwidth, maxheight))
+    logging.info('Maximum video resolution allowed: %s x %s' % (maxwidth,
+                                                                maxheight))
     # Check running processes for another instances:
     pslist = subprocess.check_output(shlex.split("ps -ax")).decode("utf-8")
     runcmd = re.findall('.*ytdash.*', pslist)
@@ -1067,6 +1180,12 @@ if __name__ == '__main__':
     aid = 0
     ffmpegmuxer = None
     BandwidthsAvgs = [0, 1, 2, 3]
+    # Player max cache in secs
+    cachesecs = 60
+    # max player backbuffer to conserve, in Mb
+    backcachesize = 50 * 1048576
+    # max player backbuffer to conserve, in Mb
+    cachesize = 50 * 1048576
     # (X11; Linux x86_64)
     if args.playlist:
         toturls = list()
@@ -1194,7 +1313,7 @@ if __name__ == '__main__':
             apipar['videoLicense'] = args.license
             apipar['videoDefinition'] = args.definition  # high|any
             apipar['maxResults'] = args.maxresults
-            apipar['videoEmbeddable'] = 'true'
+            apipar['videoEmbeddable'] = 'any'
             apipar['videoSyndicated'] = 'true'
             # Create the name of cache file:
             cachefilename = (apipar['type'] +
@@ -1216,7 +1335,8 @@ if __name__ == '__main__':
             searchcachefile = cachedir + cachefilename[0:200] + '.cache'
             apipar['fields'] = ('items(id,snippet/title,snippet/' +
                                 'channelTitle,snippet/description,' +
-                                'snippet/liveBroadcastContent)')
+                                'snippet/liveBroadcastContent,' +
+                                'snippet/publishedAt)')
             apiurl = apibaseurl + apitype + '?' + urlencode(apipar)
             # Check if cached search query version if less than 1 day old:
             if not os.path.isfile(searchcachefile):
@@ -1297,6 +1417,12 @@ if __name__ == '__main__':
                 channeltitle = snippet["channelTitle"]
                 description = snippet['description'][:columns - 24:] + '...'
                 livebroad = snippet['liveBroadcastContent']
+                publishedat = snippet.get('publishedAt', '').replace('Z', '')
+                if publishedat:
+                    publishedtime = datetime.fromisoformat(
+                                      publishedat).strftime("%A, %d %B %Y %T%p")
+                else:
+                    publishedtime = 'Unavailable'
                 if livebroad == 'none':
                     livebroad = False
                 else:
@@ -1304,6 +1430,7 @@ if __name__ == '__main__':
                 # html.unescape(title)
                 print('%s) %s\n' % (itemnum, html.unescape(title)) +
                       '    * Description: {}\n'.format(repr(description)) +
+                      '    * Published time: %s\n' % publishedtime +
                       '    * Channel: %s\n' % channeltitle +
                       '    * Live: %s' % livebroad)
                 itemnum += 1
@@ -1377,7 +1504,7 @@ if __name__ == '__main__':
                                                                        "\'")
             author = metadata.get('author')
             private = metadata['isPrivate']
-            lengthsecs = metadata['lengthSeconds']
+            lengthsecs = int(metadata['lengthSeconds'])
             postlivedvr = metadata.get('isPostLiveDvr')
             livecontent = metadata.get('isLiveContent')  # media is/was live
             live = metadata.get('isLive', False)
@@ -1414,20 +1541,13 @@ if __name__ == '__main__':
                 remainsegms = vsegoffset = 0
         maxaid = len(audiodata) - 1
         maxvid = len(videodata) - 1
+        aid = min(max(-len(audiodata), args.audioquality), maxaid)
         analyzedur = 1000000
-        # Player max cache in secs
-        cachesecs = 60
-        # max player backbuffer to conserve, in Mb
-        backcachesize = 50 * 1048576
-        # max player backbuffer to conserve, in Mb
-        cachesize = 50 * 1048576
         # Default terminal logging printing info:
         if live or postlivedvr:
             if args.fixed:
-                aid = maxaid
                 vid = maxvid
             else:
-                aid = min(args.audioquality, maxaid)
                 vid = int(maxvid/2)
             inita = initv = 1
             minvid = 0
@@ -1481,7 +1601,6 @@ if __name__ == '__main__':
         else:
             apipe = 0
             vid = int(len(videodata) / 1) - 1
-            aid = min(args.audioquality, maxaid)
             minvid = 2
             headnumber = 999
             seqnumber = 0
@@ -1511,9 +1630,6 @@ if __name__ == '__main__':
                 logging.debug("Audio Main URL: %s" % initaurl)
                 logging.debug("Video Main URL: %s" % initvurl)
             logging.debug('Video segment offset nº: %s' % vsegoffset)
-        # General Logging infos:
-        logging.info('Views count: ' + viewcount)
-        logging.info("Is live: %s" % live)
         if live:
             logging.debug("Audio Main URL: %s" % audiodata[aid][1].text)
             logging.debug("Video Main URL: %s" % videodata[vid][0].text)
@@ -1522,18 +1638,15 @@ if __name__ == '__main__':
                 livemode += 'FORCED '
                 # logging.info('Time offsets are disabled for this video.')
             livemode += latencyclass[0].replace('_', ' ') + ' LATENCY'
-            logging.info('Live mode: %s' % livemode)
-        logging.info('* Title: %s' % title)
-        logging.info('* Author: %s' % author)
-        logging.info('#'*min(columns, 80))
-        notify_send("Author: " + author, 5000, title)
-        if not args.nodescription and description:
-            logging.info('* Description: \n%s' % description)
         logging.debug("Segment duration in secs: " + str(segsecs))
         logging.debug("Back buffer depth in secs: " + str(buffersecs))
         logging.debug("Earliest seq number: " + str(earliestseqnum))
         logging.debug('Head Number: %s, ' % headnumber +
                       'Start Number: %s, ' % startnumber)
+        audioband = round(int(audiodata[aid].get('bandwidth', 0))/8/1024)
+        delaytogoup = max(round(segsecs/2, 3), 1)
+        numsegmsecs = int(60/segsecs)  # Nº of segments that fit in X secs.
+        snumsegmsecs = int(30/segsecs)  # Shorter Nº segments that fit in X sec.
         # While End ---
         if manifesturl:
             ffbaseargs = args.ffmpeg + ' -v %s ' % ffloglevel
@@ -1599,7 +1712,7 @@ if __name__ == '__main__':
                 elif offsetunit == 'h':
                     offsetsecs *= 3600
                 playerargs += ' --start=%s ' % offsetsecs
-            if manifesturl:
+            if not args.nonlive and manifesturl:
                 playerargs += ('--cache-secs=%s ' % cachesecs +
                                '--demuxer-max-back-bytes=%s ' % backcachesize +
                                '--demuxer-max-bytes=%s ' % cachesize)
@@ -1609,6 +1722,20 @@ if __name__ == '__main__':
                            '--no-video-title-show ')
         playercmd = args.player + playerargs
         logging.debug('Player command line args: ' + playercmd)
+        # General Logging media infos:
+        logging.info('Views count: ' + viewcount)
+        if lengthsecs:
+            logging.info('Duration: ' + str(round(lengthsecs/60, 1)) +
+                         ' minutes')
+        logging.info("Is live: %s" % live)
+        if live:
+            logging.info('Live mode: %s' % livemode)
+        logging.info('* Title: %s' % title)
+        logging.info('* Author: %s' % author)
+        logging.info('#'*min(columns, 80))
+        notify_send("Author: " + author, 5000, title)
+        if not args.nodescription and description:
+            logging.info('* Description: \n%s' % description)
         player = subprocess.Popen(shlex.split(playercmd),
                                   # env=env,
                                   bufsize=-1,
@@ -1631,10 +1758,6 @@ if __name__ == '__main__':
         elif ffmpegbase and ffmpegbase.poll() is None:
             ffmpegbase.stdout.close()
         # MAIN LOOP: ------------------------------------------------------#
-        audioband = round(int(audiodata[aid].get('bandwidth', 0))/8/1024)
-        delaytogoup = max(round(segsecs/2, 3), 1)
-        numsegmsecs = int(60/segsecs)  # Nº of segments that fit in X secs.
-        snumsegmsecs = int(30/segsecs)  # Shorter Nº segments that fit in X sec.
         delays = []
         truedelays = []
         headnumbers = []
