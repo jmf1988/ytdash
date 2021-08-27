@@ -855,6 +855,12 @@ if __name__ == '__main__':
                         help='enable debug mode  (default: %(default)s)')
     parser.add_argument('-player', '-p', type=str, default='mpv',
                         help='player bin name, (default: %(default)s)')
+    parser.add_argument('-httppassthrough', '-hp', action='store_true',
+                        help='Only for non-live video streams, media URL are ' +
+                        'passed directly to the player so it handles http ' +
+                        'connections. (this allows seeking without cache but ' +
+                        'may be more prone to playback failures under ' +
+                        'connection errors) (default: %(default)s)')
     parser.add_argument('-nodescription', '-nd', action='store_true',
                         help='Do not show video descriptions on the '
                         'terminal/player (default: %(default)s)')
@@ -1515,6 +1521,8 @@ if __name__ == '__main__':
             viewcount = metadata.get('viewCount')
         # Disable manifested OTF, use the non otf, the adpativefmts urls:
         if otf:
+            logging.info('This stream type is OTF, some media sources may be ' +
+                         'inaccessible.')
             otf = 0
             manifesturl = 0
         asegoffset = vsegoffset = remainsegms = defsegoffset
@@ -1678,22 +1686,34 @@ if __name__ == '__main__':
         else:
             apipe = os.pipe()
             vpipe = os.pipe()
-            playerargs += ' fd://%s ' % vpipe[0]
+            if args.httppassthrough:
+                playerargs += ' "%s" ' % videodata[vid]['url']
+            else:
+                playerargs += ' fd://%s ' % vpipe[0]
+            # Handle differently audio source player flags:
             if args.player[:3] == 'mpv':
-                # playerargs += '--audio-file=%s ' % audiodata[aid]['url']
-                playerargs += ' --audio-file=fd://%s ' % apipe[0]
+                playerargs += ' --audio-file='
+                if args.httppassthrough:
+                    playerargs += '"%s" ' % audiodata[aid]['url']
+                else:
+                    playerargs += 'fd://%s ' % apipe[0]
             elif args.player[:3] == 'vlc':
-                # playerargs += '--input-slave="%s"' % audiodata[aid]['url']
-                playerargs += ' --input-slave=fd://%s ' % apipe[0]
-            # playerargs += ' "%s" ' % videodata[vid]['url']
+                playerargs += ' --input-slave='
+                if args.httppassthrough:
+                    playerargs += '"%s" ' % audiodata[aid]['url']
+                else:
+                    playerargs += 'fd://%s ' % apipe[0]
             playerstdin = None
-            playerfds = (apipe[0], vpipe[0])
-            # playerfds = ()
+            if args.httppassthrough:
+                playerfds = ()
+            else:
+                playerfds = (apipe[0], vpipe[0])
             ffmpegbase = None
             ffmpegmuxer = None
             ffmuxerstdout = None
         if args.player == 'mpv':
             playerargs += (' --title="%s" ' % (title + " - " + author) +
+                           '--force-media-title="%s" ' % title +
                            '--osd-font-size=%s ' % 25 +
                            '--osd-align-x=center ' +
                            '--demuxer-max-bytes=%s ' % cachesize +
@@ -1777,6 +1797,14 @@ if __name__ == '__main__':
             if sys.stdout.isatty():
                 columns = os.get_terminal_size().columns
             try:
+                # Enable pasthrough only for nonlive videos, all live have mpd:
+                if args.httppassthrough and not manifesturl:
+                    logging.info('Http passtrough enabled, the player handles' +
+                                 " connections to media content.")
+                    endtext = ''
+                    raise Endit
+                else:
+                    endtext = 'Streaming completed. '
                 # sequencenums = []
                 segmsresults = []
                 rpipes = []
@@ -2202,7 +2230,8 @@ if __name__ == '__main__':
                     logging.info(playclosemess)
                 else:
                     print(' ' * columns, end='\r')
-                    logging.info('Streaming completed, waiting player...')
+                    endtext += 'Waiting player...'
+                    logging.info(endtext)
                     player.communicate()
                     player.wait()
                 if playerfds:
