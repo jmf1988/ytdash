@@ -80,6 +80,10 @@ optional arguments:
   -debug, -d            enable debug mode (default: False)
   -player PLAYER, -p PLAYER
                         player bin name, (default: mpv)
+  -httppassthrough, -hp
+                        Only for non-live video streams, media URL are passed directly to the player so it handles http
+                        connections. (this allows seeking without cache but may be more prone to playback failures under
+                        connection errors) (default: False)
   -nodescription, -nd   Do not show video descriptions on the terminal/player (default: False)
   -volnor, -vn          enable volume normalization for all videos (mpv). (default: False)
   -maxfps MAXFPS, -mf MAXFPS
