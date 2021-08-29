@@ -841,10 +841,14 @@ if __name__ == '__main__':
                         '(default: %(default)s)')
     parser.add_argument('-license', type=str, default='any',
                         choices=['creativeCommon', 'youtube', 'any'],
-                        help='filter results by video livense type ' +
+                        help='filter results by video license type. ' +
                         '(default: %(default)s)')
     parser.add_argument('-playlist', '-pl', action='store_true',
-                        help='Play all urls/ids found in file(s) ' +
+                        help='Play all urls/ids/search queries found in ' +
+                        'file(s). (default: %(default)s)')
+    parser.add_argument('-loop', '-l', action='store_true',
+                        help='Loop video ids, search queries, and/or ' +
+                        'channel ids found in arguments/playlist file(s). ' +
                         '(default: %(default)s)')
     parser.add_argument('-fullscreen', '-fs', action='store_true',
                         help='Start all videos in fullscreen mode ' +
@@ -1184,15 +1188,12 @@ if __name__ == '__main__':
     videodata = None
     vid = 0
     aid = 0
+    skiploopingnum = 0
+    looptime = 0
+    errorsnum = 0
+    resultslenght = 0
     ffmpegmuxer = None
     BandwidthsAvgs = [0, 1, 2, 3]
-    # Player max cache in secs
-    cachesecs = 60
-    # max player backbuffer to conserve, in Mb
-    backcachesize = 50 * 1048576
-    # max player backbuffer to conserve, in Mb
-    cachesize = 50 * 1048576
-    # (X11; Linux x86_64)
     if args.playlist:
         toturls = list()
         for playlist in args.urls:
@@ -1219,11 +1220,19 @@ if __name__ == '__main__':
         urls = args.urls
     # for urlid in range(len(urls)):
     while len(urls):
+        ## Need restart after each item in a playlist:
+        # Player max cache in secs
+        cachesecs = 60
+        # max player backbuffer to conserve, in Mb
+        backcachesize = 50 * 1048576
+        # max player backbuffer to conserve, in Mb
+        cachesize = 50 * 1048576
         playerargs = playerbaseargs
+        ## ------------------------------------------
         url = urlparse(urls[0])
         urlquery = url.query
         if url.fragment and args.playlist:
-            print('Playlist track title:' + url.fragment)
+            print('Playlist track title: *** %s ***' % url.fragment)
             del urls[0]
             continue
         urlstartime = parse_qs(url.query).get('t', [''])[0]
@@ -1471,6 +1480,10 @@ if __name__ == '__main__':
                             break
                 logging.debug('Video IDs chosen: ' + str(videosidssel))
                 if len(videosidssel) >= len(answer):
+                    if args.loop:
+                        urls.append(urls[0])
+                        resultslenght = len(videosidssel)
+                        skiploopingnum = resultslenght
                     del urls[0]
                     urls = videosidssel + urls
                     videoid = urls[0]
@@ -1478,23 +1491,49 @@ if __name__ == '__main__':
                 elif nextquery:
                     break
             if nextquery:
+                if args.loop:
+                    urls.append(urls[0])
                 del urls[0]
                 continue
         logging.info('#'*min(columns, 80))
         videoid = videoid[-11:]
-        logging.info('Fetching data for Video ID: %s' % videoid)
+        # Loop protection:
+        if time.time() - looptime < 1:
+            if brakesecs > 2:
+                logging.info('Loop brake activated. (%s sec sleep)' %
+                             brakesecs)
+                time.sleep(max(brakesecs, 0))
+            brakesecs += 0.25
+            if brakesecs > 10:
+                logging.info('Too many fast iterations; Infinite loop alert'+
+                             ' activated, self-destruction in 3')
+                quit()
+        else:
+            brakesecs = -2
+        looptime = time.time()
         # Get video metada:
+        logging.info('Fetching data for Video ID: %s' % videoid)
         mediadata = get_mediadata(curl, videoid)
         if type(mediadata) is int:
+            # All errors at getting media info:
             if mediadata == 1:
                 logging.debug('The video doesn\'t met search criteria.')
             elif mediadata == 2:
                 logging.info('Unable to get all the video metadata needed.')
+            # Items with error/s are not looped:
+            if args.loop and skiploopingnum > 0:
+                skiploopingnum -= 1
             del urls[0]
-            # Sleep between many failed fast request:
-            time.sleep(1)
+            errorsnum += 1
+            if ((args.research or args.search) and resultslenght == errorsnum
+                and args.loop):
+                logging.info('All items of the playlist are unavailable, '+
+                             ' not looping it...')
+                errorsnum = 0
+                del urls[-1]
             continue
         else:
+            errorsnum = 0
             latencyclass = mediadata[0]
             audiodata = mediadata[1]
             videodata = mediadata[2]
@@ -1529,7 +1568,7 @@ if __name__ == '__main__':
         minsegms = 2
         maxsegms = 2
         if args.preferquality:
-            downresist = 1.5  # Higher means more delay detected to switch down
+            downresist = 1.7  # Higher means more delay detected to switch down
             upresist = 1  # Higher means more bandwidth needed to switch up
         else:
             downresist = 1.3
@@ -2018,8 +2057,12 @@ if __name__ == '__main__':
                 # Resyncing:
                 if remainsegms > segmresynclimit:
                     seqnumber = headnumber - vsegoffset
-                    print(' ' * columns, end='\r')
-                    logging.info('Resyncing...')
+                    ptext = 'Live state: resyncing... - '
+                elif remainsegms > 0:
+                    ptext = ('\rLive state: Out of sync (%ssecs) - ' %
+                                  (remainsegms * segsecs) )
+                else:
+                    ptext = '\rLive state: Synced - '
                 firstrun = 0
                 # DELAYS: -----------------------------------------------------#
                 if live or postlivedvr:
@@ -2083,13 +2126,10 @@ if __name__ == '__main__':
                     nexttband = round(nextvband) + audioband
                     logging.debug('Bandsest2: ' + str(bandest2))
                     logging.debug('Bandsest2s: ' + str(bandest2s))
-                    if not args.debug:
-                        ptext = ('\rEstimated bandwidth Last/Avg: ' +
-                                 '%skB/s' % bandest2[-1] +
-                                 ' / %skB/s ' % bandest2avg +
-                                 '- Delays Last/Avg: %ss / %ss' %
-                                 (delays[-1], delayavg))[:columns]
-                        print(ptext + (' ' * (columns - len(ptext))), end='\r')
+                    ptext += ('Bandwidth Last/Avg: ' + '%skB/s' % bandest2[-1] +
+                              ' / %skB/s ' % bandest2avg +
+                              '- Delays Last/Avg: %ss / %ss' %
+                              (delays[-1], delayavg))[:columns]
                     logging.debug('X-Bandwidth-Avg: ' + str(bandwidths[0]))
                     logging.debug('X-Bandwidth-Est: ' + str(bandest[-1]) +
                                   ' - AVG: ' + str(bandestavg) + ' - sAVG: ' +
@@ -2103,6 +2143,9 @@ if __name__ == '__main__':
                     logging.debug('Prev total band: ' + str(prevtband))
                     logging.debug('Curr total band: ' + str(currtband))
                     logging.debug('Next total band: ' + str(nexttband))
+                if not args.debug:
+                    # print(' ' * columns, end='\r')
+                    print(ptext + (' ' * (columns - len(ptext))), end='\r')
                 # Select a quality at first run:
                 if inita and initv:
                     inita = initv = 0
@@ -2254,6 +2297,11 @@ if __name__ == '__main__':
                     ffmpegmuxer.wait()
                 break
         # End While -
+        if args.loop:
+            if skiploopingnum > 0:
+                skiploopingnum -= 1
+            else:
+                urls.append(urls[0])
         del urls[0]
     sys.stdout.flush()
     os.closerange(3, 100)
