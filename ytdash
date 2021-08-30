@@ -1032,25 +1032,22 @@ if __name__ == '__main__':
     console = logging.StreamHandler()
     console.setLevel(loglevel)
     logging.getLogger('').addHandler(console)
-    ##
-    # Try to detect native resolution to set the max video resolution to use:
+    # Try to auto detect native resolution:
     natwidth, natheight = 0, 0
     logging.debug("Trying to detect native resolution...")
+    xrandrcmd = 'xrandr | grep "\*" | cut -d" " -f4'
     try:
-        import gi
+        output = subprocess.check_output(xrandrcmd, shell=True).decode()
+        if output:
+            natwidth, natheight = output.split()[0].split('x')
+            natwidth, natheight = int(natwidth), int(natheight)
+        if(not natwidth or not natheight or type(natwidth) is not int or
+           type(natheight) is not int):
+            natwidth, natheight = 0, 0
+            raise Exception
     except:
-        logging.debug("Exception importing gi library")
-    else:
-        try:
-            gi.require_version('Gdk', '3.0')
-            from gi.repository import Gdk
-            w = Gdk.get_default_root_window()
-            natwidth, natheight = w.get_geometry()[2:4]
-            if not natwidth or not natheight:
-                logging.debug("Detected resolution from gi is zero or None")
-        except:
-            logging.debug("Exception getting resolution with gi library")
-        del gi
+        logging.info("Display native resolution auto detection failed.")
+    # Prioritize resolution as args -> auto native -> defaults:
     if args.maxwidth is None:
         if not natwidth:
             # default fallback width:
@@ -2057,7 +2054,7 @@ if __name__ == '__main__':
                 # Resyncing:
                 if remainsegms > segmresynclimit:
                     seqnumber = headnumber - vsegoffset
-                    ptext = 'Live state: resyncing... - '
+                    ptext = 'Live state: Resyncing... - '
                 elif remainsegms > 0:
                     ptext = ('\rLive state: Out of sync (%ssecs) - ' %
                                   (remainsegms * segsecs) )
@@ -2129,7 +2126,7 @@ if __name__ == '__main__':
                     ptext += ('Bandwidth Last/Avg: ' + '%skB/s' % bandest2[-1] +
                               ' / %skB/s ' % bandest2avg +
                               '- Delays Last/Avg: %ss / %ss' %
-                              (delays[-1], delayavg))[:columns]
+                              (delays[-1], delayavg))
                     logging.debug('X-Bandwidth-Avg: ' + str(bandwidths[0]))
                     logging.debug('X-Bandwidth-Est: ' + str(bandest[-1]) +
                                   ' - AVG: ' + str(bandestavg) + ' - sAVG: ' +
@@ -2145,7 +2142,8 @@ if __name__ == '__main__':
                     logging.debug('Next total band: ' + str(nexttband))
                 if not args.debug:
                     # print(' ' * columns, end='\r')
-                    print(ptext + (' ' * (columns - len(ptext))), end='\r')
+                    print(ptext[:columns] + (' ' * (columns - len(ptext))),
+                          end='\r')
                 # Select a quality at first run:
                 if inita and initv:
                     inita = initv = 0
