@@ -10,7 +10,7 @@ Quick installation of dependencies:
 - Debian based:
 apt-get install python3 python3-pycurl python3-certifi ffmpeg mpv 
 
-- Optional dependencies: "fonts-symbola" and "libnotify-bin" packages for terminal/player titles/descriptions emojis and symbols support and native desktop notifications respectively.
+- Optional dependencies: "fonts-symbola" and "fonts-noto-color-emoji" packages for terminal, player and native notifications titles and descriptions emojis and symbols support and "libnotify-bin" to enable native notifications.
 
 That's all.
 
