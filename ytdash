@@ -958,8 +958,8 @@ if __name__ == '__main__':
     message = 0
     if sys.platform != 'linux':
         message = "This script runs on Linux only."
-    elif sys.version_info[0:2] < (3, 5):
-        message = 'Python version 3.5 or higher is needed.'
+    elif sys.version_info[0:2] < (3, 7):
+        message = 'Python version 3.7 or higher is needed.'
     else:
         try:
             import pycurl
