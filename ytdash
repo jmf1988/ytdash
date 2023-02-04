@@ -1878,7 +1878,7 @@ if __name__ == '__main__':
         bandest2 = []
         bandest3 = []
         basedelayavg = cachecontrol = aend = vend = playerclosed = mindelay = 0
-        down = 0
+        down = truedelayavg = 0
         segms = firstrun = 1
         http_errors = youtubeissues = ended = end = False
         pool = ThreadPoolExecutor(max_workers=2*defsegoffset)
