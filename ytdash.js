@@ -793,28 +793,35 @@ mpv.on('spawn', ()=>{
 	}
 });*/
 let results=[],
-	nextAvailable;
+    badresults=[],
+    nextAvailable;
 //let  = openURL(urls[eid]);
 //async()=>{urls.filter(openURL)}
 //console.log('URLS' + urls);
 
 (async()=>{
 	let result,
-		eid=-1,
-		fd=2;
+		eid=0,
+		fd=3;
 	while (1){
-		if (eid > urls.length){
+		if (eid >= urls.length){
 			eid=0;
 			fd=3;
 		}
-		eid++;
-		fd++;
 		result = await openURL(urls[eid], fd);
 		// Exclude bad result from results list;
 		if(result && result!==1){
-			results.push(result);
-			
+			results.splice(eid, 1, result);
+		}else {
+			badresults.splice(eid, 1, result);
 		}
+		if (badresults.length == urls.length){
+			console.log('All videos had errors...');
+			mpv.kill();
+			break;
+		};
+		eid++;
+		fd++;
 		console.log('Trying to open input URL: ' + urls[eid]);
 	} 
 	console.log('No more videos to play.');
