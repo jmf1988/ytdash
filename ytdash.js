@@ -349,7 +349,7 @@ async function request(url, type='GET', headers={}, ioo=0, redir=0) {
 					
 				}
 			});
-			r.on('error', function(err) {
+			r.on('error', async function(err) {
 				console.log("Got error: " + err.message);
 				console.log("Error code: " + err.code);//if (r.reusedSocket && err.code === 'ECONNRESET') {
 				/*if (httpRetries>1) {
@@ -368,12 +368,13 @@ async function request(url, type='GET', headers={}, ioo=0, redir=0) {
 					//reject('HTTP retries 0');
 				}*/
 				// if retriable error:
-				if (err.code === 'EAI_AGAIN' || err.code === 'ECONNRESET'){
+				if (err.code === 'EAI_AGAIN' || err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT'){
 					//ioo.end();
 					console.log("Trying to resume from byte=" + bytesWritten);
-					options.headers['Range'] = 'bytes=' + bytesWritten + '-'
+					options.headers['Range'] = 'bytes=' + bytesWritten + '-';
+					// HTTP Error Retry Timeout:
+					await new Promise((r)=>{setTimeout(r, 2000)});
 					return retriableRequest();
-					
 				}else{
 					if (ioo!==0 ){ioo.end();
 						//ioo.destroy();
@@ -416,9 +417,9 @@ function segmentCreator(sq, murls,fd){
 			videoRequest=request(murls[1],'GET',{},ffmpeg.stdio[4]);
 			console.log('Audio PREresolved: ');
 			audioRequest.then((ar)=>{
-					console.log('Audio Resolved: %o', ar);
+					//console.log('Audio Resolved: %o', ar);
 					videoRequest.then((vr)=>{
-						console.log('Video Resolved: %o', vr);
+						//console.log('Video Resolved: %o', vr);
 						resolve(vr);
 						//audioRequest.then((ar)=>{resolve(vr)})
 					});
@@ -512,11 +513,10 @@ async function main() {
 }
 async function openURL(url,fd){
 		let sq,
-		metadata={},
 		videoId,
 		aid,
-	    vid,
-	    bandEst,
+	    	vid,
+	    	bandEst,
 		bandEst2,
 		bandEst3,
 		bandEstComp,
@@ -795,6 +795,7 @@ mpv.on('spawn', ()=>{
 let results=[],
     badresults=[],
     nextAvailable;
+var metadata={};
 //let  = openURL(urls[eid]);
 //async()=>{urls.filter(openURL)}
 //console.log('URLS' + urls);
@@ -805,6 +806,7 @@ let results=[],
 		fd=3;
 	while (1){
 		if (eid >= urls.length){
+			client.write('{ "command": ["stop"] }\n');
 			eid=0;
 			fd=3;
 		}
