@@ -2,7 +2,9 @@
 # YTdash
 YTdash is a linux command line tool written in python 3 that allows you to search online and play mainly live videos from Youtube with native performance by using a local player without having to lose bandwidth-adaptative capabilities, which is more important when streaming live content because there is less buffer available to pull from. To do all this, latency improvements are approached with a combination of parallelized https requests, DASH protocol, and keep alive connections, using the more reliable third party programs known in each function needed; the Mpv player for low latency playback and minimal interface, ffmpeg for muxing/demuxing and cURL to download the content.
 
-Required dependencies: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.7), pycurl(>=7.43.0.2)
+Required dependencies:
+ * Python: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.7), pycurl(>=7.43.0.2)
+ * Javascript: nodejs (>=19)
 
 Python dependencies: pycurl and certifi
 
