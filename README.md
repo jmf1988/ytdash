@@ -4,7 +4,7 @@ YTdash is a linux command line tool written in python 3 that allows you to searc
 
 Required dependencies:
  * Python: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.7), pycurl(>=7.43.0.2)
- * Javascript: nodejs (>=19)
+ * Javascript: nodejs (>=v18.15.0)
 
 Python dependencies: pycurl and certifi
 
