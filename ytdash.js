@@ -57,7 +57,7 @@ const mpvargs =   '--idle ' +
                   //'--reset-on-next-file=all ' +
                   '--video-latency-hacks=yes ' +
                   //'--demuxer-lavf-o-add=fflags=+nobuffer ' +
-                  '--no-correct-pts ' +
+                  //'--no-correct-pts ' + // a/v desync on seeking
                   //'--untimed ' +
                   //'--fps=60 ' +
                   //'--demuxer-lavf-probe-info=nostreams ' +
