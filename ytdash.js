@@ -607,6 +607,7 @@ async function openURL(url,fd){
         acodec = metadata[videoId].audio.webm.opus;
         vcodec = await metadata[videoId].video.mp4.avc1;
         aid=acodec.length-1; // Defaulting to highest audio quality by sort.order:
+	if(vcodec.length < vid + 1){ vid = vcodec.length - 1; }; // Pick highest available
         //console.dir(metadata[videoId].video.mp4);
         if (vcodec.every(elem=>elem.signatureCipher)){
             //vcodec[0].signatureCipher
