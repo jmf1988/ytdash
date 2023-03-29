@@ -55,9 +55,9 @@ const mpvargs =   '--idle ' +
                   //'--audio-file=fd://3' +
                   //' fd://3 ' +
                   //'--reset-on-next-file=all ' +
-                  //'--video-latency-hacks=yes ' +
+                  '--video-latency-hacks=yes ' +
                   //'--demuxer-lavf-o-add=fflags=+nobuffer ' +
-                  //'--no-correct-pts ' +
+                  '--no-correct-pts ' +
                   //'--untimed ' +
                   //'--fps=60 ' +
                   //'--demuxer-lavf-probe-info=nostreams ' +
@@ -224,8 +224,9 @@ async function request(url, type='GET', headers={}, ioo=0, redir=0) {
     headers['Access-Control-Expose-Headers'] = 'Content-Length';
     //var httpRetries = 5;
     var retrySecs = 5,
-        bytesWritten=0;
-    var body ='';
+        bytesWritten = 0,
+		body = '',
+		newURL = '';
     let options = { host: url.host,
                 port: 443,
                 path: url.pathname + url.search,
@@ -249,7 +250,9 @@ async function request(url, type='GET', headers={}, ioo=0, redir=0) {
                     console.log("HEADERS: " + res.rawHeaders);
                 }
                 if(statcode === 301 || statcode === 302) {
-                    url = new URL(res.headers.location);
+					newURL = res.headers.location;
+                    //console.log("-----> Saving New URL: " + newURL);
+					url = new URL(newURL);
                     options.host = url.host;
                     options.path = url.pathname + url.search;
                     return retriableRequest();
@@ -322,7 +325,8 @@ async function request(url, type='GET', headers={}, ioo=0, redir=0) {
                         }
                         console.log("==>>> PRE RESOLVE ");
                         //if(!next){
-                        resolve([responseHeaders, body, url.href]);
+                        newURL = newURL.replace(/\/sq\/[0-9]*/, '');
+                        resolve([responseHeaders, body, newURL]);
                         //}else{resolve(1);}
                     });
                     /*res.on('error',(err)=>{
@@ -641,8 +645,7 @@ async function openURL(url,fd){
     let audioResults,videoResults,startMiliSecsTime,segmenterDurationSecs,goUp,goDown,bandEstPro,bandEstPros=[];
 	while(resp = await segmentCreator(sq, murls, fd)){
 		console.log('NEXT ITEM REQUESTED?: ' + next);
-		audioResults = resp[0];
-        videoResults = await resp[1];
+		videoResults = await resp[1];
         headers = await videoResults[0];
         if (next) {
             console.log('NEXT ITEM REQUESTED!!!!');
@@ -693,15 +696,17 @@ async function openURL(url,fd){
             }
             goUp=false;
             sq++;
-            await audioResults;
-	        await audioResults[0];
-	        if(audioResults[2]){ 
-				aurl = audioResults[2].slice(0,audioResults[2].indexOf(manifestSequencePath)) 
-				console.log('----------->> NEW AURL HREF: ' + aurl)
-	        }
+            audioResults = await resp[0];
+	        headers = await audioResults[0];
 	        if(videoResults[2]){
-				vurl = videoResults[2].slice(0,videoResults[2].indexOf(manifestSequencePath)) 
-				console.log('----------->> NEW VURL HREF: ' + vurl)
+				//vurl = videoResults[2].slice(0,videoResults[2].indexOf(manifestSequencePath)) 
+				vurl = videoResults[2] + '/';
+				console.log('----------->> NEW VURL HREF: ' + vurl);
+	        }
+	        if(audioResults[2]){ 
+				//aurl = audioResults[2].slice(0,audioResults[2].indexOf(manifestSequencePath)) 
+				aurl = audioResults[2] + '/';
+				console.log('----------->> NEW AURL HREF: ' + aurl);
 	        }
 	        //murls = [audioResults[2], videoResults[2]];
 	        //console.dir(murls);
