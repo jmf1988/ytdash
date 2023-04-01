@@ -6,7 +6,7 @@ const http = require('https'),
       child_process = require('child_process'),
       parseString = require('xml2js').parseString,
       zlib = require('zlib'),
-      keepAliveAgent = new http.Agent({ keepAlive: true }),
+      keepAliveAgent = new http.Agent({ keepAlive: true, scheduling: 'fifo' }),
       apiKey='AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
       metadataUrl = 'https://www.youtube.com/youtubei/v1/player?key=' + apiKey;
 
