@@ -8,11 +8,12 @@ const http = require('https'),
       zlib = require('zlib'),
       keepAliveAgent = new http.Agent({ keepAlive: true, scheduling: 'fifo' }),
       apiKey='AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
-      metadataUrl = 'https://www.youtube.com/youtubei/v1/player?key=' + apiKey;
+      metadataUrl = 'https://www.youtube.com/youtubei/v1/player?key=' + apiKey,
+      ffmpegURI = '/usr/bin/ffmpeg';
 
 // Variables:
-let     urls = process.argv.slice(2),
-		ffbaseinputs = '',
+let     args = process.argv.slice(2),
+        ffbaseinputs = '',
         ffbaseargs = '',
         ffmuxinargs,
         ffmuxoutargs,
@@ -33,7 +34,7 @@ ffbaseargs += ' -c copy -f nut -bsf:v h264_mp4toannexb';
 ffbaseargs += ' -flags +low_delay -';
 // ffmpeg muxer:
 ffmuxinargs = ' -thread_queue_size 100512 -flags +low_delay -i ';
-ffmuxoutargs = ' -c copy -f mpegts -bsf:v h264_mp4toannexb -copyts -flags +low_delay ';
+ffmuxoutargs = ' -c copy -copyts -flags +low_delay -f mpegts ';
 ffmuxargs = '-v warning -nostdin -xerror' +
             ffmuxinargs + 'async:pipe:3' +
             ffmuxinargs + 'async:pipe:4' +
@@ -139,7 +140,7 @@ async function getMetadata(url, headers={}) {
     console.log('Is Live: ', (videoDetails.isLive||false));
     console.log('Views: ', Number(videoDetails.viewCount));
     if (latencyClass) {
-		mediaMetadata.latencyClass = latencyClass.slice(42).replace('_',' ');
+        mediaMetadata.latencyClass = latencyClass.slice(42).replace('_',' ');
         console.log('Latency Class: %o', mediaMetadata.latencyClass);
     }
     console.log('Short Description: \n' + videoDetails.shortDescription);
@@ -228,8 +229,8 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
     //var httpRetries = 5;
     var retrySecs = 5,
         bytesWritten = 0,
-		body = '',
-		newURL = '';
+        body = '',
+        newURL = '';
     let options = { host: url.host,
                 port: 443,
                 path: url.pathname + url.search,
@@ -253,9 +254,9 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
                     console.log("HEADERS: " + res.rawHeaders);
                 }
                 if(statcode === 301 || statcode === 302) {
-					newURL = res.headers.location;
+                    newURL = res.headers.location;
                     console.log("-----> Redirecting to New URL: " + newURL);
-					url = new URL(newURL);
+                    url = new URL(newURL);
                     options.host = url.host;
                     options.path = url.pathname + url.search;
                     return retriableRequest();
@@ -263,13 +264,49 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
                     //        headers, ioo, 1);
                 } else if (statcode === 200||statcode === 204||statcode === 206){
                     // data no se llama with a HEAD request:
-                    /*res.on('readable', () => {
+                    /*res.on('readable', async() => {
                             let chunk;
+                            let canWrite;
                             while (null !== (chunk = res.read(102400))) {
                                 console.log(`Received ${chunk.length} bytes of data.`);
                                 if (type==='GET'){
-                                    body.push(chunk);
-                                }else{
+                                    //body.push(chunk);
+                                    if (ioo){
+                                        ioo.cork();
+                                        if (httpRetries){
+                                                if(!next){
+                                                    //ioo.cork();
+                                                    canWrite = !ioo.write(chunk);
+                                                    ioo.uncork();
+                                                } else{
+                                                    //res.pause();
+                                                    ioo.uncork();
+                                                    ioo.end();
+                                                    //ioo.uncork();
+                                                    //r.emit('end', '');
+                                                    r.end();
+                                                    ffmpeg.kill('SIGKILL');
+                                                    await res.destroy(new Error('Next item requested '));
+                                                    //res.destroySoon()
+                                                    //r.destroy( new Error('Next item requested '));
+                                                }
+                                            } else{
+                                                console.log('Http error on the other media content, cancelling ');
+                                                ioo.end();
+                                                r.end();
+                                                await res.destroy(new Error('Http error on the other media content, cancelling '));
+                                                //r.destroy(new Error('Http error on the other media content, cancelling '));
+                                                //res.emit('end', null);
+                                                //return
+
+                                            }
+                                        //  }
+                                    } else {
+                                        // For getting Manifest URL:
+                                        body.push(chunk);
+                                    }
+                                } else{
+                                    // For POST requests:
                                     body+=chunk;
                                 }
                             }
@@ -333,14 +370,14 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
                         resolve([responseHeaders, body, newURL]);
                         //}else{resolve(1);}
                     });
-                    /*res.on('error',(err)=>{
+                    res.on('error',(err)=>{
                         console.log("Error on response: " + err);
                         ffmpeg.kill('SIGKILL');
                         console.log('Http error on the other media content, cancelling ');
-                    });*/
+                    });
                 } else if(statcode === 403||statcode === 404||statcode === 503){
                     if (httpRetries>0) {
-							(function loop() {
+                            (function loop() {
                             setTimeout(function() {
                                 // Escriba su lógica aquí
                                 retriableRequest();
@@ -416,7 +453,7 @@ function segmentCreator(sq, murls, fd, mpv){
     let audioRequest,
         videoRequest;
     let segmenter = new Promise((resolve, reject) => {
-        ffmpeg = child_process.spawn('ffmpeg', ffmuxargs.split(' '),
+        ffmpeg = child_process.spawn(ffmpegURI, ffmuxargs.split(' '),
                 { stdio: ['ignore', mpv.stdio[fd], process.stderr,
                           'pipe', 'pipe']
                 });
@@ -583,20 +620,21 @@ async function openURL(url,fd, mpv){
     if (metadata[videoId].isLive){
         aid=-1;
         vid=3;
+        ffmuxargs = ffmuxargs.replace('-f nut','-f mpegts');
         aurl = metadata[videoId].audio.at(aid).BaseURL;
         vurl = metadata[videoId].video.at(vid).BaseURL;
         minBandwidthRequired = metadata[videoId].video[vid].$.bandwidth;
         switch (metadata[videoId].latencyClass) {
-			case 'NORMAL':
-				segmentDurationSecs = 5;
-				break;
-			case 'LOW':
-				segmentDurationSecs = 2;
-				break;
-			case 'ULTRA LOW':
-				segmentDurationSecs = 1;
-				break;
-		}
+            case 'NORMAL':
+                segmentDurationSecs = 5;
+                break;
+            case 'LOW':
+                segmentDurationSecs = 2;
+                break;
+            case 'ULTRA LOW':
+                segmentDurationSecs = 1;
+                break;
+        }
         manifestSequencePath = 'sq/';
         let manLessSequencePath = '&sq='; // bandwidth limited by YouTube;
         // Get Live HEADers metadata:
@@ -606,11 +644,67 @@ async function openURL(url,fd, mpv){
         saurl = aurl + manifestSequencePath + sq;
         svurl = vurl + manifestSequencePath + sq; //+ '&range=0-1024000';
     }else{
+        let prefAudioFormat,prefVideoFormat,prefAudioCodecs,prefVideoCodecs,videoMetadata, audioMetadata, audioFormat, videoFormat;
+        ffmuxargs = ffmuxargs.replace('-f mpegts','-f nut');
         vid = 2; // Defaulting to low/medium video quality by sort.order:
-        acodec = metadata[videoId].audio.webm.opus;
-        vcodec = await metadata[videoId].video.mp4.avc1;
+        audioMetadata = metadata[videoId].audio;
+        videoMetadata = await metadata[videoId].video;
+        prefAudioCodecs = ['opus', 'mp4a'];
+        prefVideoCodecs = ['av01', 'vp9', 'avc1'];
+        for (let pacodec of prefAudioCodecs){
+            for (let audioFormat in audioMetadata){
+                for (let audioCodec in audioMetadata[audioFormat]){
+                    if (audioCodec === pacodec){
+                        acodec = audioMetadata[audioFormat][audioCodec];
+                        break;
+                    }
+                }
+                if (acodec){break;}
+            }
+            if (acodec){break;}
+        }
+        for (let pvcodec of prefVideoCodecs){
+            for (let videoFormat in videoMetadata){
+                for (let videoCodec in videoMetadata[videoFormat]){
+                    if (videoCodec === pvcodec){
+                        vcodec = videoMetadata[videoFormat][videoCodec];
+                        break;
+                    }
+                }
+                if (vcodec){break;}
+            }
+            if (vcodec){break;}
+        }
+        /*prefAudioCodecs.forEach(codec=>{
+            console.log('CODECCCCCCCCCCCC:' + codec)
+            if (codec === 'opus') {
+                prefAudioFormat = 'webm';
+            } else {
+                prefAudioFormat = 'mp4';
+            }
+            audioFormat = audioMetadata[prefAudioFormat];
+            if (audioFormat){
+                acodec = audioFormat[codec];
+                if (acodec){return;}
+                console.dir(audioFormat)
+            }
+        });
+        prefVideoCodecs.forEach(codec=>{
+            if (codec === 'av01' || codec === 'avc1') {
+                prefVideoFormat = 'mp4';
+            } else {
+                prefVideoFormat = 'webm';
+
+            }
+            videoFormat = videoMetadata[prefVideoFormat];
+            if (videoFormat){
+                vcodec = videoFormat[codec];
+                if (vcodec){return;}
+                console.dir(videoFormat)
+            }
+        });*/
         aid=acodec.length - 1; // Defaulting to highest audio quality by sort.order:
-        if(vcodec.length < vid + 1){ vid = vcodec.length - 1; }; // Pick highest available
+        if(vcodec.length < vid + 1){ vid = vcodec.length - 1; }; // Pick highest available-
         //console.dir(metadata[videoId].video.mp4);
         if (vcodec.every(elem=>elem.signatureCipher)){
             //vcodec[0].signatureCipher
@@ -634,7 +728,7 @@ async function openURL(url,fd, mpv){
     }else{
         nextAvailable=0;
     }*/
-    let ipcString = `{ "command": ["loadfile", "fd://${fd}", "append-play", "force-media-title=${metadata[videoId].title + ' - ' + metadata[videoId].author}"] }\n`
+    let ipcString = `{ "command": ["loadfile", "fd://${fd}", "append-play", "force-media-title=${metadata[videoId].title.replace(':',';') + ' - ' + metadata[videoId].author}"] }\n`
     console.log(ipcString);
     client.write(ipcString)
     //if (client){client.write(ipcString)};
@@ -647,9 +741,9 @@ async function openURL(url,fd, mpv){
     //client.write('{ "command": ["set", "pause", "no"] }\n')
     //if (metadata[videoId].isLive){
     let audioResults,videoResults,startMiliSecsTime,segmenterDurationSecs,goUp,goDown,bandEstPro,bandEstPros=[];
-	while(resp = await segmentCreator(sq, murls, fd, mpv)){
-		console.log('NEXT ITEM REQUESTED?: ' + next);
-		videoResults = await resp[1];
+    while(resp = await segmentCreator(sq, murls, fd, mpv)){
+        console.log('NEXT ITEM REQUESTED?: ' + next);
+        videoResults = await resp[1];
         headers = await videoResults[0];
         if (next) {
             console.log('NEXT ITEM REQUESTED!!!!');
@@ -687,12 +781,12 @@ async function openURL(url,fd, mpv){
                     minBandwidthRequired = metadata[videoId].video[vid].$.bandwidth;
                 }
         // Check to go down:
-            } 
+            }
             goDown=false;
             if (!goUp && vid > 0 && segmentsDurationsSecsPro > segmentDurationSecs * 1.2 && segmentsDurationsSecsPro[2] > segmentDurationSecs * 1.2 ){
                 if (bandEstPro<1.6*(minBandwidthRequired/8/1024)){
-					console.log('====>> GOING DOWN')
-					goDown=true;
+                    console.log('====>> GOING DOWN')
+                    goDown=true;
                     vid--;
                     vurl = metadata[videoId].video[vid].BaseURL;
                     minBandwidthRequired = metadata[videoId].video[vid].$.bandwidth;
@@ -701,40 +795,40 @@ async function openURL(url,fd, mpv){
             goUp=false;
             sq++;
             audioResults = await resp[0];
-	        headers = await audioResults[0];
-	        if(videoResults[2]){
-				//vurl = videoResults[2].slice(0,videoResults[2].indexOf(manifestSequencePath)) 
-				vurl = videoResults[2] + '/';
-				console.log('----------->> NEW VURL HREF: ' + vurl);
-	        }
-	        if(audioResults[2]){ 
-				//aurl = audioResults[2].slice(0,audioResults[2].indexOf(manifestSequencePath)) 
-				aurl = audioResults[2] + '/';
-				console.log('----------->> NEW AURL HREF: ' + aurl);
-	        }
-	        //murls = [audioResults[2], videoResults[2]];
-	        //console.dir(murls);
+            headers = await audioResults[0];
+            if(videoResults[2]){
+                //vurl = videoResults[2].slice(0,videoResults[2].indexOf(manifestSequencePath))
+                vurl = videoResults[2] + '/';
+                console.log('----------->> NEW VURL HREF: ' + vurl);
+            }
+            if(audioResults[2]){
+                //aurl = audioResults[2].slice(0,audioResults[2].indexOf(manifestSequencePath))
+                aurl = audioResults[2] + '/';
+                console.log('----------->> NEW AURL HREF: ' + aurl);
+            }
+            //murls = [audioResults[2], videoResults[2]];
+            //console.dir(murls);
             murls[0] = aurl + manifestSequencePath + sq;
             murls[1] = vurl + manifestSequencePath + sq;
-            
+
         } else {
             console.info("Video ended.");
             return 3;
         }
         if(startMiliSecsTime) {
-			segmenterDurationSecs = Math.round((performance.now() - startMiliSecsTime))/1000;
-			segmentsDurationsSecs.push(segmenterDurationSecs);
-			if (segmentsDurationsSecs.length > 3) {
-				segmentsDurationsSecs.shift();
-			}
-			segmentsDurationsSecsPro = 0;
-			segmentsDurationsSecs.forEach(e=>segmentsDurationsSecsPro+=e);
-			segmentsDurationsSecsPro /= 3;
-			console.log('-----------> Segments Durs: ' + segmentsDurationsSecs);
-			console.log('-----------------------> DOWNLOADs Pro DURATION: ' + segmentsDurationsSecsPro + ' secs');
-		
-		}
-		
+            segmenterDurationSecs = Math.round((performance.now() - startMiliSecsTime))/1000;
+            segmentsDurationsSecs.push(segmenterDurationSecs);
+            if (segmentsDurationsSecs.length > 3) {
+                segmentsDurationsSecs.shift();
+            }
+            segmentsDurationsSecsPro = 0;
+            segmentsDurationsSecs.forEach(e=>segmentsDurationsSecsPro+=e);
+            segmentsDurationsSecsPro /= 3;
+            console.log('-----------> Segments Durs: ' + segmentsDurationsSecs);
+            console.log('-----------------------> DOWNLOADs Pro DURATION: ' + segmentsDurationsSecsPro + ' secs');
+
+        }
+
         startMiliSecsTime = performance.now();
     }
 }
@@ -753,49 +847,51 @@ async function openURL(url,fd, mpv){
     }
 });*/
 async function apiSearch(query){
-	let args,items,apiBaseURL,apiParameters,midURL,apiUrlCheckLive,apiType,
-	urlEnd,apiURL,jsonResponse,videoIds = [];
-args = {
-'eventType':'live',
-'sortBy':'relevance', 
-'safeSearch':'moderate',
-'type':'video',
-'videoDuration':'any',
-'videoType':'any',
-'videoLicense':'any',
-'videoDefinition':'any',
-'maxResults':'5',
-'videoEmbeddable':'any',
-'videoSyndicated':'true',
-'videoDimension':'2d'
+    let parms,items,apiBaseURL,apiParameters,midURL,apiUrlCheckLive,apiType,
+    urlEnd,apiURL,jsonResponse,videoIds = [];
+    parms = {
+    'eventType':'completed',
+    'sortBy':'relevance',
+    'safeSearch':'moderate',
+    'type':'video',
+    'videoDuration':'any',
+    'videoType':'any',
+    'videoLicense':'any',
+    'videoDefinition':'any',
+    'maxResults':'5',
+    'videoEmbeddable':'any',
+    'videoSyndicated':'true',
+    'videoDimension':'2d'
 
-}
-	apiBaseURL = 'https://www.googleapis.com/youtube/v3/';
-	apiParameters = {};
-	apiParameters['part'] = 'snippet';
-	apiParameters['key'] = 'AIzaSyBSnNQ7qOmLPxC5CaHH9BWHqAgrecwzCVA';
-	midURL = new URLSearchParams(apiParameters).toString();
-	apiUrlCheckLive = apiBaseURL + 'videos?' + midURL;
-	apiType = 'search'
-	apiParameters['type'] = 'video'
-	apiParameters['order'] = args.sortBy
-	apiParameters['eventType'] = args.eventType
-	apiParameters['videoDimension'] = '2d'
-	//apipar['regionCode'] = 'AR'
-	apiParameters['safeSearch'] = args.safeSearch
-	apiParameters['videoDuration'] = args.videoDuration
-	apiParameters['videoType'] = args.videoType
-	apiParameters['type'] = args.type
-	apiParameters['videoLicense'] = args.videoLicense
-	apiParameters['videoDefinition'] = args.videoDefinition  // high|any
-	apiParameters['maxResults'] = args.maxResults
-	apiParameters['videoEmbeddable'] = 'any'
-	apiParameters['videoSyndicated'] = 'true'
-	apiParameters['fields'] = 'items(id,snippet/title,snippet/' +
+    }
+    apiBaseURL = 'https://www.googleapis.com/youtube/v3/';
+    apiParameters = {};
+    apiParameters['part'] = 'snippet';
+    apiParameters['key'] = 'AIzaSyBSnNQ7qOmLPxC5CaHH9BWHqAgrecwzCVA';
+    midURL = new URLSearchParams(apiParameters).toString();
+    apiUrlCheckLive = apiBaseURL + 'videos?' + midURL;
+    apiType = 'search'
+    apiParameters['type'] = 'video'
+    apiParameters['order'] = 'relevance'
+    apiParameters['eventType'] = 'live'
+    apiParameters['videoDimension'] = '2d'
+    //apipar['regionCode'] = 'AR'
+    apiParameters['safeSearch'] = 'moderate'
+    apiParameters['videoDuration'] = 'any'
+    apiParameters['videoType'] = 'any'
+    apiParameters['type'] = 'video'
+    apiParameters['videoLicense'] = 'any'
+    apiParameters['videoDefinition'] = 'any'  // high|any
+    apiParameters['maxResults'] = 5
+    apiParameters['videoEmbeddable'] = 'any'
+    apiParameters['videoSyndicated'] = 'true'
+    apiParameters['fields'] = 'items(id,snippet/title,snippet/' +
                               'channelTitle,snippet/description,' +
                               'snippet/liveBroadcastContent,' +
                               'snippet/publishedAt)'
     apiParameters['q'] = query;
+    if (args.includes('-n')){apiParameters['eventType']='completed'}
+    if (args.includes('-u')){apiParameters['eventType']='upcoming'}
     urlEnd = new URLSearchParams(apiParameters).toString();
     apiURL = apiBaseURL + apiType + '?' + urlEnd;
     console.log("API URL: " + apiURL);
@@ -804,10 +900,10 @@ args = {
     console.dir(jsonResponse['items']);
     items = jsonResponse.items;
     if (items){
-		items.forEach(item=>videoIds.push(item.id.videoId));
-		console.dir("item " + videoIds);
-	}
-	return videoIds;
+        items.forEach(item=>videoIds.push(item.id.videoId));
+        console.dir("item " + videoIds);
+    }
+    return videoIds;
 }
 //console.log('URLS' + urls);
 let results=[0],
@@ -815,108 +911,119 @@ let results=[0],
 var metadata={};
 // MAIN ULTRA_ASYNC_GENERIC_LOOP_2000:
 async function  main() {
-	let mpvStdio = {stdio: ['ignore', process.stdout, process.stderr]}
-	if (urls[0] === '-s' && urls[1]){
-		urls = await apiSearch(urls[1]);
-		console.dir(urls);
-		
-	}
-	/*for (let times=0; times < urls.length;times++){
-	            mpvStdio.stdio.push('pipe');
-	            //console.log('Mpv STDIO: %o', mpvStdio.stdio)
-	        }*/
-	await urls.forEach(e=>mpvStdio.stdio.push('pipe'));
-	console.log('Mpv STDIO: %o', mpvStdio.stdio)
-	const mpv = child_process.spawn('mpv', mpvargs.split(' '),mpvStdio);
-	//mpv.stdin._writableState.highWaterMark=1024;
-	
-	//mpv.connected
-	mpv.on('exit', ()=>{
-	    console.log('Player closed, exit...');
-	    process.exit();
-	});
-	//function setMpvIPC(){
-	mpv.on('spawn', ()=>{
-	    // connect to IPC socket :
-	    Id=setInterval(function(){
-	        client=net.createConnection("/tmp/mpvsocket", ()=>{
-	            //client.write('{ "command": ["loadfile", "-"] }\n');
-	            //client.write('{ "command": ["loadfile", "fd://0", "append-play"] }\n');
-	            //client.write('{ "command": ["loadfile", "fd://3", "append-play"] }\r\n');
-	            client.write('{ "command": ["observe_property", 1, "playback-abort"] }\r\n');
-	            client.write('{ "command": ["observe_property", 1, "cache-buffering-state"] }\n');
-	            client.write('{ "command": ["observe_property", 1, "playlist-pos"] }\n');
-	            client.write('{ "command": ["observe_property", 1, "playlist-next"] }\n');
-	            client.write('{ "command": ["observe_property", 1, "playlist-playing-pos"] }\n');
-	            /*ffmpegbase = child_process.spawn('ffmpeg',
-	                         ffbaseargs.split(' '),
-	                         {stdio: ['pipe',mpv.stdin, process.stderr]});
-	                         //*/
-	            clearInterval(Id);
-	        }).on('error', (err)=>{
-	            //console.log('MPV Exit Code: ' + mpv.exitCode)
-	            //console.log('MPV Error Code: ' + err);
-	            console.log('Mpv IPC Channel Unavailable yet.' + err);
-	            //process.exit();
-	        }).on('data', async (rawEvents)=>{
-	            // Multiline events  can come so:
-	            const eventsList = rawEvents.toString().split('\n').slice(0,-1);
-	            for (let strEvent of eventsList) {
-	                let event = JSON.parse(strEvent);
-	                console.log('IPC Event: ');
-	                console.dir(event);
-	                // console.dir(JSON.parse(event));
-	                if ( event && event.event === "seek" ){
-	                    console.log('Seek ');
-	                } else if ( event.event === 'end-file' && event.reason!=='quit' ){
-	                    //client.write('{ "command": ["drop-buffers"] }\n');
-	                    //client.write('{ "command": ["set", "idle", "yes"] }\n');
-	                    /*if(urls.length - 1 > eid){
-	                        eid++;
-	                    }else{
-	                        eid=0;
-	                    }*/
-	                    //playlist_entry_id = event.playlist_entry_id;
-	                    //client.write('{ "command": ["set", "audio-reload", "0"] }\n');
-	                    //client.write('{ "command": ["set", "video-reload", "0"] }\n');
-	                    /*if (!nextAvailable){
-	                        console.log('OPENNING NEXT FILE ');
-	                        next = 1;
-	                        //playlist_entry_id = event.playlist_entry_id;
-	                    }*/
-	                    let cid = event.playlist_entry_id;
-	                    console.dir(results);
-	                    console.dir(results.slice(cid-1));
-	                    if(!results.slice(cid-1).some(e=>e>=2)){
-	                        console.log('OPENNING NEXT FILE ');
-	                        //client.write('{ "command": ["stop", "keep-playlist"] }\n');
-	                        client.write('{ "command": ["stop"] }\n');
-	                        next=1
-	                   }
-	
-	                    //console.log('PLAYING NEXT FILE ' + client.write('{ "command": ["playlist-next"] }\n'));
-	                    //await new Promise((r)=>{setTimeout(r, 2000)})
-	                    /*while (await openURL(urls[eid])){
-	                        console.log('Error opening this, Skipping');
-	                        if(urls.length - 1 > eid){
-	                            eid++;
-	                        }else {
-	                            break;
-	                        }
-	
-	                    }
-	                    if (playlist_entry_id === event.playlist_entry_id) {
-	                        playlist_entry_id = event.playlist_entry_id;
-	                        next = 1;
-	                }else if ( event.event === 'tracks-changed'){*/
-	                    //client.write('{ "command": ["loadfile", "-"] }\n');
-	                }
-	            }
-	        });
-	    }, 100);
-	});
-	let result,
-		eid=0,
+    let mpvStdio = {stdio: ['ignore', process.stdout, process.stderr]},
+        parameter,urls;
+    if (args.includes('-s')){
+        parameter = args.slice(args.indexOf('-s'))[1];
+        if (parameter){
+            urls = await apiSearch(parameter);
+            console.dir(urls);
+            if (!urls.length){
+                console.log("0 videos found.");
+                process.exit();
+            }
+        }else{
+            console.log('No search string given.')
+            process.exit();
+        }
+    }
+    /*for (let times=0; times < urls.length;times++){
+                mpvStdio.stdio.push('pipe');
+                //console.log('Mpv STDIO: %o', mpvStdio.stdio)
+            }*/
+    await urls.forEach(e=>mpvStdio.stdio.push('pipe'));
+    //console.log('Mpv STDIO: %o', mpvStdio.stdio)
+    const mpv = child_process.spawn('mpv', mpvargs.split(' '),mpvStdio);
+    //mpv.stdin._writableState.highWaterMark=1024;
+
+    //mpv.connected
+    mpv.on('exit', ()=>{
+        console.log('Player closed, exit...');
+        process.exit();
+    });
+    //function setMpvIPC(){
+    mpv.on('spawn', ()=>{
+        // connect to IPC socket :
+        Id=setInterval(function(){
+            client=net.createConnection("/tmp/mpvsocket", ()=>{
+                //client.write('{ "command": ["loadfile", "-"] }\n');
+                //client.write('{ "command": ["loadfile", "fd://0", "append-play"] }\n');
+                //client.write('{ "command": ["loadfile", "fd://3", "append-play"] }\r\n');
+                client.write('{ "command": ["observe_property", 1, "playback-abort"] }\r\n');
+                client.write('{ "command": ["observe_property", 1, "cache-buffering-state"] }\n');
+                client.write('{ "command": ["observe_property", 1, "playlist-pos"] }\n');
+                client.write('{ "command": ["observe_property", 1, "playlist-next"] }\n');
+                client.write('{ "command": ["observe_property", 1, "playlist-playing-pos"] }\n');
+                /*ffmpegbase = child_process.spawn('ffmpeg',
+                             ffbaseargs.split(' '),
+                             {stdio: ['pipe',mpv.stdin, process.stderr]});
+                             //*/
+                clearInterval(Id);
+            }).on('error', (err)=>{
+                //console.log('MPV Exit Code: ' + mpv.exitCode)
+                //console.log('MPV Error Code: ' + err);
+                console.log('Mpv IPC Channel Unavailable yet.' + err);
+                //process.exit();
+            }).on('data', async (rawEvents)=>{
+                // Multiline events  can come so:
+                const eventsList = rawEvents.toString().split('\n').slice(0,-1);
+                for (let strEvent of eventsList) {
+                    let event = JSON.parse(strEvent);
+                    console.log('IPC Event: ');
+                    console.dir(event);
+                    // console.dir(JSON.parse(event));
+                    if ( event && event.event === "seek" ){
+                        console.log('Seek ');
+                    } else if ( event.event === 'end-file' && event.reason!=='quit' ){
+                        //client.write('{ "command": ["drop-buffers"] }\n');
+                        //client.write('{ "command": ["set", "idle", "yes"] }\n');
+                        /*if(urls.length - 1 > eid){
+                            eid++;
+                        }else{
+                            eid=0;
+                        }*/
+                        //playlist_entry_id = event.playlist_entry_id;
+                        //client.write('{ "command": ["set", "audio-reload", "0"] }\n');
+                        //client.write('{ "command": ["set", "video-reload", "0"] }\n');
+                        /*if (!nextAvailable){
+                            console.log('OPENNING NEXT FILE ');
+                            next = 1;
+                            //playlist_entry_id = event.playlist_entry_id;
+                        }*/
+                        let cid = event.playlist_entry_id;
+                        console.dir(results);
+                        console.dir(results.slice(cid-1));
+                        if(!results.slice(cid-1).some(e=>e>=2)){
+                            console.log('OPENNING NEXT FILE ');
+                            //client.write('{ "command": ["stop", "keep-playlist"] }\n');
+                            client.write('{ "command": ["stop"] }\n');
+                            next=1
+                       }
+                        client.write('{ "command": ["stop"] }\n');
+                        next=1
+                        //console.log('PLAYING NEXT FILE ' + client.write('{ "command": ["playlist-next"] }\n'));
+                        //await new Promise((r)=>{setTimeout(r, 2000)})
+                        /*while (await openURL(urls[eid])){
+                            console.log('Error opening this, Skipping');
+                            if(urls.length - 1 > eid){
+                                eid++;
+                            }else {
+                                break;
+                            }
+
+                        }
+                        if (playlist_entry_id === event.playlist_entry_id) {
+                            playlist_entry_id = event.playlist_entry_id;
+                            next = 1;
+                    }else if ( event.event === 'tracks-changed'){*/
+                        //client.write('{ "command": ["loadfile", "-"] }\n');
+                    }
+                }
+            });
+        }, 100);
+    });
+    let result,
+        eid=0,
         fd=3;
     //do {
     while (true){
@@ -924,29 +1031,29 @@ async function  main() {
             //client.write('{ "command": ["playlist-clear"] }\n');
             //client.write('{ "command": ["stop"] }\n');
             if (results.length == urls.length && results.length == 1){
-				break;
-			};
+                break;
+            };
             if (results.every(r=>r<2)){
-				console.log('All videos had errors...');
-				break;
-			}else if (results.filter(e=>e>1).every(r=>r>=2)){
-				if (!Object.entries(metadata).every(([l,e])=>{return e.isLive})){
-			        console.log('ALl urls are non live.');
-			        console.log('All videos already downloaded...');
-			        break;
-			    }
-			};
+                console.log('All videos had errors...');
+                break;
+            }else if (results.filter(e=>e>1).every(r=>r>=2)){
+                if (!Object.entries(metadata).every(([l,e])=>{return e.isLive})){
+                    console.log('ALl urls are non live.');
+                    console.log('All videos already downloaded...');
+                    break;
+                }
+            };
             eid=0;
             fd=3;
         };
         if ( !results[eid] || results[eid] < 4 ){
-			result = await openURL(urls[eid], fd, mpv);
-			results.splice(eid, 1, result);
-		}
+            result = await openURL(urls[eid], fd, mpv);
+            results.splice(eid, 1, result);
+        }
         eid++;
         if(result>=2){
-			fd++;
-		}
+            fd++;
+        }
         console.log('Trying to open input URL: ' + urls[eid]);
         console.log('Results ' + results);
     };
