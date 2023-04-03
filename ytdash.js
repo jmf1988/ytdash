@@ -650,7 +650,7 @@ async function openURL(url,fd, mpv){
         audioMetadata = metadata[videoId].audio;
         videoMetadata = await metadata[videoId].video;
         prefAudioCodecs = ['opus', 'mp4a'];
-        prefVideoCodecs = ['av01', 'vp9', 'avc1'];
+        prefVideoCodecs = ['vp9', 'avc1','av01'];
         for (let pacodec of prefAudioCodecs){
             for (let audioFormat in audioMetadata){
                 for (let audioCodec in audioMetadata[audioFormat]){
