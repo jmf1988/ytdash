@@ -9,11 +9,11 @@ const http = require('https'),
       keepAliveAgent = new http.Agent({ keepAlive: true, scheduling: 'fifo' }),
       apiKey='AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
       metadataUrl = 'https://www.youtube.com/youtubei/v1/player?key=' + apiKey,
+      args = process.argv.slice(2),
       ffmpegURI = '/usr/bin/ffmpeg';
 
 // Variables:
-let     args = process.argv.slice(2),
-        ffbaseinputs = '',
+let     ffbaseinputs = '',
         ffbaseargs = '',
         ffmuxinargs,
         ffmuxoutargs,
@@ -740,7 +740,7 @@ async function openURL(url,fd, mpv){
     // Main loop:
     //client.write('{ "command": ["set", "pause", "no"] }\n')
     //if (metadata[videoId].isLive){
-    let audioResults,videoResults,startMiliSecsTime,segmenterDurationSecs,goUp,goDown,bandEstPro,bandEstPros=[];
+    let audioResults,videoResults,startMiliSecsTime,segmenterDurationSecs,goUp=false,goDown=false,bandEstPro,bandEstPros=[];
     while(resp = await segmentCreator(sq, murls, fd, mpv)){
         console.log('NEXT ITEM REQUESTED?: ' + next);
         videoResults = await resp[1];
@@ -771,31 +771,46 @@ async function openURL(url,fd, mpv){
             console.debug('BAND PROS: ' + bandEstPros);
             console.debug('MIN BAND REQ: ' + minBandwidthRequired/8/1024);
             console.debug('BAND EST COMP: ' + bandEstComp + ' Kb/s');
+            audioResults = await resp[0];
+            await audioResults[0];
+            if(startMiliSecsTime) {
+	            segmenterDurationSecs = Math.round((performance.now() - startMiliSecsTime))/1000;
+	            segmentsDurationsSecs.push(segmenterDurationSecs);
+            if (segmentsDurationsSecs.length > 3) {
+                segmentsDurationsSecs.shift();
+            }
+            segmentsDurationsSecsPro = 0;
+            segmentsDurationsSecs.forEach(e=>segmentsDurationsSecsPro+=e);
+            segmentsDurationsSecsPro /= segmentsDurationsSecs.length;
+            console.log('-----------> Segments Durs: ' + segmentsDurationsSecs);
+            console.log('-----------------------> DOWNLOADs Pro DURATION: ' + segmentsDurationsSecsPro + ' secs');
+
+	        }
+            startMiliSecsTime = performance.now();
             // Check to go up in media quality:
             if ( !goDown && vid < videoQualitiesQuantity - 1){
-                if (bandEstPro>2*(minBandwidthRequired/8/1024) && metadata[videoId].video[vid+1].$.height<=maxHeight){
+                if (bandEstPro>1.3*(minBandwidthRequired/8/1024) &&
+                    metadata[videoId].video[vid+1].$.height<=maxHeight){
                     goUp=true;
                     console.log('====>> GOING UP')
                     vid++;
                     vurl = metadata[videoId].video[vid].BaseURL;
                     minBandwidthRequired = metadata[videoId].video[vid].$.bandwidth;
                 }
-        // Check to go down:
+	        // Check to go down:
             }
             goDown=false;
-            if (!goUp && vid > 0 && segmentsDurationsSecsPro > segmentDurationSecs * 1.2 && segmentsDurationsSecsPro[2] > segmentDurationSecs * 1.2 ){
-                if (bandEstPro<1.6*(minBandwidthRequired/8/1024)){
+            if (!goUp && vid > 0 && segmentsDurationsSecsPro > segmentDurationSecs * 1.2 &&
+                segmentsDurationsSecs[2] > segmentDurationSecs * 1.2 ){
+                //if (bandEstPro<1.5*(minBandwidthRequired/8/1024)){
                     console.log('====>> GOING DOWN')
                     goDown=true;
                     vid--;
                     vurl = metadata[videoId].video[vid].BaseURL;
                     minBandwidthRequired = metadata[videoId].video[vid].$.bandwidth;
-                }
+                //}
             }
             goUp=false;
-            sq++;
-            audioResults = await resp[0];
-            headers = await audioResults[0];
             if(videoResults[2]){
                 //vurl = videoResults[2].slice(0,videoResults[2].indexOf(manifestSequencePath))
                 vurl = videoResults[2] + '/';
@@ -808,6 +823,7 @@ async function openURL(url,fd, mpv){
             }
             //murls = [audioResults[2], videoResults[2]];
             //console.dir(murls);
+            sq++;
             murls[0] = aurl + manifestSequencePath + sq;
             murls[1] = vurl + manifestSequencePath + sq;
 
@@ -815,21 +831,7 @@ async function openURL(url,fd, mpv){
             console.info("Video ended.");
             return 3;
         }
-        if(startMiliSecsTime) {
-            segmenterDurationSecs = Math.round((performance.now() - startMiliSecsTime))/1000;
-            segmentsDurationsSecs.push(segmenterDurationSecs);
-            if (segmentsDurationsSecs.length > 3) {
-                segmentsDurationsSecs.shift();
-            }
-            segmentsDurationsSecsPro = 0;
-            segmentsDurationsSecs.forEach(e=>segmentsDurationsSecsPro+=e);
-            segmentsDurationsSecsPro /= 3;
-            console.log('-----------> Segments Durs: ' + segmentsDurationsSecs);
-            console.log('-----------------------> DOWNLOADs Pro DURATION: ' + segmentsDurationsSecsPro + ' secs');
-
-        }
-
-        startMiliSecsTime = performance.now();
+        
     }
 }
     /*}else{
@@ -892,6 +894,9 @@ async function apiSearch(query){
     apiParameters['q'] = query;
     if (args.includes('-n')){apiParameters['eventType']='completed'}
     if (args.includes('-u')){apiParameters['eventType']='upcoming'}
+    if (args.includes('-mr')){
+        apiParameters['maxResults'] = args.slice(args.indexOf('-mr'))[1];
+    }
     urlEnd = new URLSearchParams(apiParameters).toString();
     apiURL = apiBaseURL + apiType + '?' + urlEnd;
     console.log("API URL: " + apiURL);
@@ -923,10 +928,11 @@ async function  main() {
                 process.exit();
             }
         }else{
-            console.log('No search string given.')
+            console.log('No search string given.');
             process.exit();
         }
-    }
+
+    } else {urls = args;}
     /*for (let times=0; times < urls.length;times++){
                 mpvStdio.stdio.push('pipe');
                 //console.log('Mpv STDIO: %o', mpvStdio.stdio)
