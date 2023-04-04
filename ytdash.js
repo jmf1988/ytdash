@@ -10,7 +10,7 @@ const http = require('https'),
       apiKey='AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
       metadataUrl = 'https://www.youtube.com/youtubei/v1/player?key=' + apiKey,
       args = process.argv.slice(2),
-      ffmpegURI = '/home/jmf/.local/bin/ffmpeg',
+      ffmpegURI = '/usr/bin/ffmpeg',
       debug = args.includes('-debug');
 
 // Variables:
