@@ -10,7 +10,8 @@ const http = require('https'),
       apiKey='AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
       metadataUrl = 'https://www.youtube.com/youtubei/v1/player?key=' + apiKey,
       args = process.argv.slice(2),
-      ffmpegURI = '/usr/bin/ffmpeg';
+      ffmpegURI = '/home/jmf/.local/bin/ffmpeg',
+      debug = args.includes('-debug');
 
 // Variables:
 let     ffbaseinputs = '',
@@ -46,10 +47,10 @@ const mpvargs =   '--idle ' +
                   '--profile=low-latency ' +
                   //'--demuxer-lavf-linearize-timestamps=yes ' +
                   //'--demuxer-seekable-cache=yes ' +
-                  //'--demuxer-max-bytes=' + 50 * 1048576 + ' ' +
-                  //'--demuxer-max-back-bytes=' + 50 * 1048576 + ' ' +
+                  '--demuxer-max-bytes=' + 50 * 1048576 + ' ' +
+                  '--demuxer-max-back-bytes=' + 50 * 1048576 + ' ' +
                   '--cache=yes ' +
-                  //'--cache-secs=60 ' +
+                  '--cache-secs=300 ' +
                   '--loop-playlist=force ' +
                   '--prefetch-playlist=yes ' +
                   //'--playlist=fd://0 ' +
@@ -60,7 +61,7 @@ const mpvargs =   '--idle ' +
                   //'--af=lavfi="[alimiter=limit=0.9:level=enabled]" ' +
                   '--audio-normalize-downmix=yes ' +
                   '--af=lavfi=[loudnorm=I=-22:TP=-1.5:LRA=2] ' +
-                  '--demuxer-lavf-o-add=fflags=+nobuffer ' +
+                  //'--demuxer-lavf-o-add=fflags=+nobuffer ' +
                   //'--no-correct-pts ' + // a/v desync on seeking
                   //'--untimed ' +
                   //'--fps=60 ' +
@@ -105,17 +106,17 @@ async function getMetadata(url, headers={}) {
         videoMetadata,
         audioFormatMetadata,
         videoFormatMetadata;
-    console.debug('PRE POST.');
+    if(debug){console.debug('PRE POST.');}
     postRes = await request(url, 'POST', headers);
     //await new Promise((r)=>{setTimeout(r, 5000)});
-    console.debug('POST POST.');
+    if(debug){console.debug('POST POST.');}
     jsonResponse = JSON.parse(postRes[1]);
     //console.dir(jsonResponse.microformat);
     videoDetails = jsonResponse.videoDetails;
     playabilityStatus = jsonResponse.playabilityStatus;
     if (playabilityStatus.status !== 'OK'){
-        console.debug('Stream status: %o', playabilityStatus.status);
-        console.debug('Reason: %o', playabilityStatus.reason);
+        console.info('Stream status: %o', playabilityStatus.status);
+        console.info('Reason: %o', playabilityStatus.reason);
         return 1;
     }
     streamingData = jsonResponse.streamingData;
@@ -133,20 +134,24 @@ async function getMetadata(url, headers={}) {
         console.warn('Non-live videos have slow download because of Youtube rules so video bandwidth adaptive mode is disabled.');
     }
     //console.log("VideoID: %o", videoId);
-    console.log("Status: %o", playabilityStatus.status);
-    console.log('Title: %o', videoDetails.title);
-    console.log('Author: %o', videoDetails.author);
-    console.log('Channel Id: %o', videoDetails.channelId);
-    console.log('Is Live: ', (videoDetails.isLive||false));
-    console.log('Views: ', Number(videoDetails.viewCount));
+    console.info("Status: %o", playabilityStatus.status);
+    console.info('Title: %o', videoDetails.title);
+    console.info('Author: %o', videoDetails.author);
+    console.info('Is Live: ', (videoDetails.isLive||false));
     if (latencyClass) {
         mediaMetadata.latencyClass = latencyClass.slice(42).replace('_',' ');
-        console.log('Latency Class: %o', mediaMetadata.latencyClass);
+        console.info('Latency Class: %o', mediaMetadata.latencyClass);
     }
-    console.log('Short Description: \n' + videoDetails.shortDescription);
+    console.info('Channel Id: %o', videoDetails.channelId);
+    console.info('Views: ', Number(videoDetails.viewCount));
+    if (videoDetails.shortDescription) {
+        console.info('Short Description:');
+        console.info(videoDetails.shortDescription);
+        //console.dir(console.dir(videoDetails.shortDescription.replace('\n\' \+', '')));
+    }
     if (videoDetails.isLive){
         dashManifestURL = streamingData.dashManifestUrl;
-        console.debug('DASH Manifest URL:'+ dashManifestURL);
+        if(debug){console.debug('DASH Manifest URL:'+ dashManifestURL);}
         // Request manifest compressed 'cause too big:
         dashManifestRawBody = await request(dashManifestURL, 'GET',
                                          {'Accept-Encoding' : 'gzip'}
@@ -209,7 +214,7 @@ async function getMetadata(url, headers={}) {
                     printStr += ' Stream Type: ' + formatType.split('_').at(-1);
                 }
             }
-            console.log(printStr);
+            if(debug){console.debug(printStr);}
         }
     }
     // Change url to redirectors:
@@ -218,7 +223,7 @@ async function getMetadata(url, headers={}) {
 }
 
 async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
-    console.log("REQUEST TYPE: " + type);
+    if(debug){console.debug("REQUEST TYPE: " + type);}
     url = new URL(url);
     headers.Accept = '*/*';
     headers['User-Agent'] = 'YTdash/0.19';
@@ -235,27 +240,32 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
                 port: 443,
                 path: url.pathname + url.search,
                 headers: headers,
-                method: type };
+                method: type },
+        hadError=false,
+        requestStartTime = performance.now(),
+        requestDuration;
     options.agent = keepAliveAgent;
     let Ans = new Promise((resolve, reject) => {
         function retriableRequest(){
             let r;
+            //onErrorStartTime = performance.now();
+
             r = http.request(options, function(res) {
                 let responseHeaders = res.headers;
                 var statcode = res.statusCode;
-                console.log("REUSED SOCKET: " + r.reusedSocket);
-                console.log("HTTP Response Code: " + res.statusCode);
+                if(debug){console.debug("REUSED SOCKET: " + r.reusedSocket);}
+                if(debug){console.debug("HTTP Response Code: " + res.statusCode);}
                 //console.log("HTTP Version: " + res.httpVersion);
                 if( type==='POST' ){
                     res.setEncoding('utf8');
                 } else if (type==='GET'){
                     body = [];
                 } else{
-                    console.log("HEADERS: " + res.rawHeaders);
+                    if(debug){console.debug("HEADERS: " + res.rawHeaders);}
                 }
                 if(statcode === 301 || statcode === 302) {
                     newURL = res.headers.location;
-                    console.log("-----> Redirecting to New URL: " + newURL);
+                    if(debug){console.debug("-----> Redirecting to New URL: " + newURL);}
                     url = new URL(newURL);
                     options.host = url.host;
                     options.path = url.pathname + url.search;
@@ -331,12 +341,12 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
                                             //r.emit('end', '');
                                             //res.end()
                                             ffmpeg.kill('SIGKILL');
-                                            res.destroy(new Error('Next item requested '));
+                                            res.destroy(new Error('Next item requested.'));
                                             //res.destroySoon()
                                             //r.destroy( new Error('Next item requested '));
                                         }
                                     } else{
-                                        console.log('Http error on the other media content, cancelling ');
+                                        console.info('Http error on the other media content, cancelling ');
                                         res.destroy(new Error('Http error on the other media content, cancelling '));
                                         //r.destroy(new Error('Http error on the other media content, cancelling '));
                                         //res.emit('end', null);
@@ -354,27 +364,27 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
                         }
                     });
                     res.on("end",()=>{
-                        console.log("==>>> RUNNiNG REQUEST END EVENT ");
+                        requestDuration = (performance.now() - requestStartTime)/1000;
+                        if(debug){console.debug("==>>> RUNNiNG REQUEST END EVENT ");}
                         // Close fds or ffmpeg don't close:
                         if(type==='GET'){
                             if (ioo!==0 ){ioo.end();}
                             if (next){
-                                console.log('Next item requested. ');
+                                if(debug){console.debug('Next item requested. ');}
                                 //res.destroy();
                             }
                             body = Buffer.concat(body);
                         }
-                        console.log("==>>> PRE RESOLVE ");
+                        if(debug){console.debug("==>>> PRE RESOLVE ");}
                         //if(!next){
                         newURL = newURL.replace(/\/sq\/[0-9]*/, '');
-                        resolve([responseHeaders, body, newURL]);
+                        resolve([responseHeaders, body, newURL, requestDuration, hadError]);
                         //}else{resolve(1);}
                     });
-                    res.on('error',(err)=>{
-                        console.log("Error on response: " + err);
-                        ffmpeg.kill('SIGKILL');
-                        console.log('Http error on the other media content, cancelling ');
-                    });
+                    /*res.on('error',(err)=>{
+                        if(debug){console.debug("Error on response, cancelling: " + err);}
+                        //ffmpeg.kill('SIGKILL');
+                    });*/
                 } else if(statcode === 403||statcode === 404||statcode === 503){
                     if (httpRetries>0) {
                             (function loop() {
@@ -386,12 +396,12 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
                             }, retrySecs*2000);
                             })();
                             httpRetries--;
-                        console.log("Retrying, remaining tries: " + httpRetries);
+                        console.info("Retrying, remaining tries: " + httpRetries);
                         //res.emit('end', null);
                         //retriableRequest();
 
                     } else{
-                        console.log('HTTP error code: ' + res.statusCode);
+                        console.info('HTTP error code: ' + res.statusCode);
                         res.destroy(new Error('Http error on the other media content, cancelling '));
                         //resolve(null);
                     }
@@ -401,8 +411,11 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
                 }
             });
             r.on('error', async function(err) {
-                console.log("Got error: " + err.message);
-                console.log("Error code: " + err.code);//if (r.reusedSocket && err.code === 'ECONNRESET') {
+                hadError = true;
+                if ( err.message !== 'Next item requested.'){
+                    console.info("Got error: " + err.message);
+                    console.info("Error code: " + err.code);//if (r.reusedSocket && err.code === 'ECONNRESET') {
+                }
                 /*if (httpRetries>1) {
                     /*(function loop() {
                         setTimeout(function() {
@@ -421,9 +434,10 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
                 // if retriable error:
                 if (err.code === 'ENETUNREACH' || err.code === 'EAI_AGAIN' || err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT' ){
                     //ioo.end();
-                    console.log("Trying to resume from byte=" + bytesWritten);
+                    console.info("Trying to resume stream from byte=" + bytesWritten);
                     options.headers['Range'] = 'bytes=' + bytesWritten + '-';
                     await new Promise((r)=>{setTimeout(r, 2000)});
+                    //onErrorDuration += (performance.now() - onErrorStartTime)/1000;
                     return retriableRequest();
 
                 }else{
@@ -432,9 +446,9 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
                         //r.destroy();
                     }
                     //
-                    console.log("Resolving...");
+                    if(debug){console.debug("Resolving...");}
                     resolve(1);
-                    console.log("Resolved...");
+                    if(debug){console.debug("Resolved...");}
                 }
             });
             if (type==='POST'){
@@ -444,13 +458,13 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
         }
         retriableRequest();
     });
-    console.log("PRE Return");
+    if(debug){console.debug("PRE Return");}
     return Ans;
 }
 
-function segmentCreator(sq, murls, fd, mpv){
+function segmentCreator(sq, murls, fd, mpv, isLive){
     var ffmpeg;
-    let audioRequest,
+    let audioRequest,beforeRequest,requestsLapse,
         videoRequest;
     let segmenter = new Promise((resolve, reject) => {
         ffmpeg = child_process.spawn(ffmpegURI, ffmuxargs.split(' '),
@@ -460,15 +474,31 @@ function segmentCreator(sq, murls, fd, mpv){
             //let audioRequest=request(murls[0],'GET',{},mpv.stdio[3]);
             //let videoRequest=request(murls[1],'GET',{},mpv.stdio[4]);
         ffmpeg.on('error', (err)=>{
-            console.log('FFmpeg Muxer error: ' + err);
+            console.info('FFmpeg Muxer error: ' + err);
             resolve(1);
         });
         ffmpeg.on('spawn',()=>{
+            //let videoResponse, audioResponse;
             httpRetries=5;
+            //beforeRequest = performance.now();
             audioRequest=request(murls[0],'GET',{},ffmpeg.stdio[3],ffmpeg);
             videoRequest=request(murls[1],'GET',{},ffmpeg.stdio[4],ffmpeg);
-            console.log('Audio PREresolved: ');
-            resolve([audioRequest, videoRequest]);
+            if(debug){console.debug('Audio PREresolved: ');}
+            if (isLive){
+                ffmpeg.on('close',()=>{
+                    resolve([audioRequest, videoRequest]);
+                });
+            }else{
+                resolve([audioRequest, videoRequest]);}
+            //videoResponse = await videoRequest;
+            //audioResponse = await audioRequest;
+            //console.info(' Error Lapso ' + videoResponse[3]);
+            //console.info(' Error Lapso ' + audioResponse[3]);
+            //requestsLapse = (performance.now() - beforeRequest)/1000;
+            //audioResponse.push(requestsLapse);
+            //videoResponse.push(requestsLapse);
+           // console.info(' Lapso ' + requestsLapse);
+
             /*audioRequest.then((ar)=>{
                     //console.log('Audio Resolved: %o', ar);
                     videoRequest.then((vr)=>{
@@ -526,7 +556,7 @@ function segmentCreator(sq, murls, fd, mpv){
         });
 
     });
-    console.log('RETURNING...');
+    if(debug){console.debug('RETURNING...');}
     return segmenter;
 }
 
@@ -536,7 +566,7 @@ async function openURL(url,fd, mpv){
         //metadata={},
         segmentDurationSecs,
         segmentsDurationsSecs = [],
-        segmentsDurationsSecsPro,
+        segmentsDurationsSecsAvg,
         videoId,
         aid,
         vid,
@@ -558,7 +588,7 @@ async function openURL(url,fd, mpv){
         minBandwidthRequired,
         manifestSequencePath;
     //await new Promise(r => setTimeout(r, 20000));
-    if(!url){ console.log("No URL detected"); return;}
+    if(!url){ console.info("No URL detected"); return;}
     if (!url.startsWith('#')){
         if (url.length !== 11) {
             let urlp;
@@ -566,7 +596,7 @@ async function openURL(url,fd, mpv){
                 urlp = new URL(url);
             }
             catch(error){
-                console.log('URL Error: %o with Input: %o ',
+                console.info('URL Error: %o with Input: %o ',
                             error.code,
                             error.input);
                 //deadVideoIds++;
@@ -580,11 +610,11 @@ async function openURL(url,fd, mpv){
                 //process.exit();
             }
         } else {
-            console.log('Openning VideoId: ' + url);
+            console.info('VideoId: --->>> %o <<<---', url);
             videoId = url;
         }
     }else {
-        console.log('Playlist Item Info: ' + url);
+        console.info('Playlist Item Info: ' + url);
         //deadVideoIds++;
         return 1;
     }
@@ -596,21 +626,21 @@ async function openURL(url,fd, mpv){
     //||(metadata[videoId].expireInSeconds - metadata[videoId]['x-head-time-sec'])
     dateTime = new Date();
     //URLs expire in 6hrs:
-    console.log("MMMMEEETTAADDDDAAATTAEEEEEE!!: " + metadata[videoId])
+    //if(debug){console.debug("MMMMEEETTAADDDDAAATTAEEEEEE!!: " + metadata[videoId])}
     if (!metadata[videoId]){
         metadata[videoId] = await getMetadata(metadataUrl,
                                               metaPostHeaders);
-        console.log("DATE CREATION ADDED: " );
+        if(debug){console.debug("DATE CREATION ADDED: " );}
         //console.dir(metadata[videoId]);
     } else{
-        console.log("Using cached video details." );
+        console.info("Using cached video details." );
     }
     // If a video Id gives metadata errors it's skipped next time:
     if (metadata[videoId]===1){
             //console.log('Removing %s from playlist', videoId);
             //urls = urls.filter(item=>item!==videoId);
             //deadVideoIds++;
-            console.log('Skipping Video Id: %s.', videoId);
+            console.info('Skipping Video Id: %s.', videoId);
             return 1;
         } else{
             metadata[videoId].dateTime = dateTime;
@@ -714,13 +744,13 @@ async function openURL(url,fd, mpv){
             //return 1;
             //process.exit();
         }
-        console.dir(acodec[acodec.length-1])
+        if(debug){console.dir(acodec[acodec.length-1]);}
         // console.dir(vcodec.at(vid));
         saurl = acodec[aid].url;
         svurl = vcodec[vid].url;
     }
-    console.debug("AURL: " + saurl);
-    console.debug("VURL: " + svurl);
+    if(debug){console.debug("AURL: " + saurl);}
+    if(debug){console.debug("VURL: " + svurl);}
     //client.write('{ "command": ["drop-buffers"] }\n');
     //if (!fd){fd=3;}else{fd=0;}
     /*if (result[0] === 2 && result[1] !== fd) {
@@ -729,7 +759,7 @@ async function openURL(url,fd, mpv){
         nextAvailable=0;
     }*/
     let ipcString = `{ "command": ["loadfile", "fd://${fd}", "append-play", "force-media-title=${metadata[videoId].title.replace(':',';') + ' - ' + metadata[videoId].author}"] }\n`
-    console.log(ipcString);
+    if(debug){console.debug(ipcString);}
     client.write(ipcString)
     //if (client){client.write(ipcString)};
     //client.write('{ "command": ["set", "idle", "no"] }\n');
@@ -740,13 +770,13 @@ async function openURL(url,fd, mpv){
     // Main loop:
     //client.write('{ "command": ["set", "pause", "no"] }\n')
     //if (metadata[videoId].isLive){
-    let audioResults,videoResults,startMiliSecsTime,segmenterDurationSecs,goUp=false,goDown=false,bandEstPro,bandEstPros=[];
-    while(resp = await segmentCreator(sq, murls, fd, mpv)){
-        console.log('NEXT ITEM REQUESTED?: ' + next);
+    let audioResults,videoResults,startMiliSecsTime,segmenterDurationSecs,requestDurationSecs,goUp=false,goDown=false,bandEstAvg,bandEstAvgs=[];
+    while(resp = await segmentCreator(sq, murls, fd, mpv, metadata[videoId].isLive)){
+        if(debug){console.debug('NEXT ITEM REQUESTED?: ' + next);}
         videoResults = await resp[1];
         headers = await videoResults[0];
         if (next) {
-            console.log('NEXT ITEM REQUESTED!!!!');
+            if(debug){console.debug('NEXT ITEM REQUESTED!!!!');}
             return 2;
             //break;
         }
@@ -756,54 +786,61 @@ async function openURL(url,fd, mpv){
             bandEst2 = headers['x-bandwidth-est2']/8/1024;
             bandEst3 = headers['x-bandwidth-est3']/8/1024;
             bandEstComp = headers['x-bandwidth-est-comp']/8/1024;
-            bandEstPro = (bandEst + bandEst2 + bandEst3)/3;
-            bandEstPros.push(bandEstPro);
-            if (bandEstPros.length > 5 ){bandEstPros.shift()};
-            bandEstPro = 0;
-            bandEstPros.forEach(e=>bandEstPro+=e);
-            bandEstPro /= 5;
-            console.debug('SEQUENCE NUMBER: ' + sq);
-            console.debug("VID: " + vid);
-            console.debug('BAND EST: ' + bandEst + ' Kb/s');
-            console.debug('BAND EST2: ' + bandEst2 + ' Kb/s');
-            console.debug('BAND EST3: ' + bandEst3 + ' Kb/s');
-            console.debug('BAND PRO: ' + bandEstPro + ' Kb/s');
-            console.debug('BAND PROS: ' + bandEstPros);
-            console.debug('MIN BAND REQ: ' + minBandwidthRequired/8/1024);
-            console.debug('BAND EST COMP: ' + bandEstComp + ' Kb/s');
+            bandEstAvg = (bandEst + bandEst2 + bandEst3)/3;
+            bandEstAvgs.push(bandEstAvg);
+            if (bandEstAvgs.length > 5 ){bandEstAvgs.shift()};
+            bandEstAvg = 0;
+            bandEstAvgs.forEach(e=>bandEstAvg+=e);
+            bandEstAvg /= 5;
+            if(debug){console.debug('SEQUENCE NUMBER: ' + sq);}
+            if(debug){console.debug("VID: " + vid);}
+            if(debug){console.debug('BAND EST: ' + bandEst + ' Kb/s');}
+            if(debug){console.debug('BAND EST2: ' + bandEst2 + ' Kb/s');}
+            if(debug){console.debug('BAND EST3: ' + bandEst3 + ' Kb/s');}
+            if(debug){console.debug('BAND Avg: ' + bandEstAvg + ' Kb/s');}
+            if(debug){console.debug('BAND AvgS: ' + bandEstAvgs);}
+            if(debug){console.debug('MIN BAND REQ: ' + minBandwidthRequired/8/1024);}
+            if(debug){console.debug('BAND EST COMP: ' + bandEstComp + ' Kb/s');}
             audioResults = await resp[0];
             await audioResults[0];
-            if(startMiliSecsTime) {
-	            segmenterDurationSecs = Math.round((performance.now() - startMiliSecsTime))/1000;
-	            segmentsDurationsSecs.push(segmenterDurationSecs);
-            if (segmentsDurationsSecs.length > 3) {
-                segmentsDurationsSecs.shift();
+            //if(startMiliSecsTime) {
+            // if any request had error do not save segment stream duration:
+            if(!audioResults[4] || !videoResults[4]) {
+                // Use highest media type duration as segment duration:
+                if(videoResults[3] >= audioResults[3]){
+                    requestDurationSecs = videoResults[3];
+                } else {
+                    requestDurationSecs = audioResults[3];
+                }
+                // segmenterDurationSecs = Math.round((performance.now() - startMiliSecsTime))/1000;
+                segmentsDurationsSecs.push(requestDurationSecs);
+                if (segmentsDurationsSecs.length > 3) {
+                    segmentsDurationsSecs.shift();
+                }
+                segmentsDurationsSecsAvg = 0;
+                segmentsDurationsSecs.forEach(e=>segmentsDurationsSecsAvg+=e);
+                segmentsDurationsSecsAvg /= segmentsDurationsSecs.length;
+                if(debug){console.debug('-----------> Segments Durs: ' + segmentsDurationsSecs);}
+                if(debug){console.debug('-----------------------> DOWNLOADs Avg DURATION: ' + segmentsDurationsSecsAvg + ' secs');}
             }
-            segmentsDurationsSecsPro = 0;
-            segmentsDurationsSecs.forEach(e=>segmentsDurationsSecsPro+=e);
-            segmentsDurationsSecsPro /= segmentsDurationsSecs.length;
-            console.log('-----------> Segments Durs: ' + segmentsDurationsSecs);
-            console.log('-----------------------> DOWNLOADs Pro DURATION: ' + segmentsDurationsSecsPro + ' secs');
-
-	        }
-            startMiliSecsTime = performance.now();
+            // startMiliSecsTime = performance.now();
             // Check to go up in media quality:
             if ( !goDown && vid < videoQualitiesQuantity - 1){
-                if (bandEstPro>1.3*(minBandwidthRequired/8/1024) &&
+                if (bandEstAvg>1.3*(minBandwidthRequired/8/1024) &&
                     metadata[videoId].video[vid+1].$.height<=maxHeight){
                     goUp=true;
-                    console.log('====>> GOING UP')
+                    if(debug){console.debug('====>> GOING UP')}
                     vid++;
                     vurl = metadata[videoId].video[vid].BaseURL;
                     minBandwidthRequired = metadata[videoId].video[vid].$.bandwidth;
                 }
-	        // Check to go down:
+            // Check to go down:
             }
             goDown=false;
-            if (!goUp && vid > 0 && segmentsDurationsSecsPro > segmentDurationSecs * 1.2 &&
+            if (!goUp && vid > 0 && segmentsDurationsSecsAvg > segmentDurationSecs * 1.2 &&
                 segmentsDurationsSecs[2] > segmentDurationSecs * 1.2 ){
-                //if (bandEstPro<1.5*(minBandwidthRequired/8/1024)){
-                    console.log('====>> GOING DOWN')
+                //if (bandEstAvg<1.5*(minBandwidthRequired/8/1024)){
+                    if(debug){console.debug('====>> GOING DOWN')}
                     goDown=true;
                     vid--;
                     vurl = metadata[videoId].video[vid].BaseURL;
@@ -814,12 +851,12 @@ async function openURL(url,fd, mpv){
             if(videoResults[2]){
                 //vurl = videoResults[2].slice(0,videoResults[2].indexOf(manifestSequencePath))
                 vurl = videoResults[2] + '/';
-                console.log('----------->> NEW VURL HREF: ' + vurl);
+                if(debug){console.debug('----------->> NEW VURL HREF: ' + vurl);}
             }
             if(audioResults[2]){
                 //aurl = audioResults[2].slice(0,audioResults[2].indexOf(manifestSequencePath))
                 aurl = audioResults[2] + '/';
-                console.log('----------->> NEW AURL HREF: ' + aurl);
+                if(debug){console.debug('----------->> NEW AURL HREF: ' + aurl);}
             }
             //murls = [audioResults[2], videoResults[2]];
             //console.dir(murls);
@@ -831,7 +868,7 @@ async function openURL(url,fd, mpv){
             console.info("Video ended.");
             return 3;
         }
-        
+
     }
 }
     /*}else{
@@ -899,52 +936,56 @@ async function apiSearch(query){
     }
     urlEnd = new URLSearchParams(apiParameters).toString();
     apiURL = apiBaseURL + apiType + '?' + urlEnd;
-    console.log("API URL: " + apiURL);
+    if(debug){console.debug("API URL: " + apiURL);}
     jsonResponse = await request(apiURL, "GET", {'Referer':'www.youtube.com/test'});
     jsonResponse = JSON.parse(jsonResponse[1]);
-    console.dir(jsonResponse['items']);
+    if(debug){console.dir(jsonResponse['items']);}
     items = jsonResponse.items;
     if (items){
         items.forEach(item=>videoIds.push(item.id.videoId));
-        console.dir("item " + videoIds);
+        if(debug){console.dir("item " + videoIds);}
     }
     return videoIds;
 }
-//console.log('URLS' + urls);
+//if(debug){console.debug('URLS' + urls);}
 let results=[0],
     nextAvailable;
-var metadata={};
+var metadata={},videoId;
 // MAIN ULTRA_ASYNC_GENERIC_LOOP_2000:
 async function  main() {
     let mpvStdio = {stdio: ['ignore', process.stdout, process.stderr]},
         parameter,urls;
+    if(debug){console.debug('ARGS: %o', args)}
     if (args.includes('-s')){
         parameter = args.slice(args.indexOf('-s'))[1];
         if (parameter){
             urls = await apiSearch(parameter);
-            console.dir(urls);
+            if(debug){console.dir(urls);}
             if (!urls.length){
-                console.log("0 videos found.");
+                console.info("0 videos found.");
                 process.exit();
             }
         }else{
-            console.log('No search string given.');
+            console.info('No search string given.');
             process.exit();
         }
 
-    } else {urls = args;}
+    } else {
+        urls = args.filter(e=>e!=='-s' && e!=='-n'&& e!=='-u'&& e!=='-debug')
+    }
+    if(debug){console.debug('URLS: %o', urls)}
     /*for (let times=0; times < urls.length;times++){
                 mpvStdio.stdio.push('pipe');
                 //console.log('Mpv STDIO: %o', mpvStdio.stdio)
             }*/
     await urls.forEach(e=>mpvStdio.stdio.push('pipe'));
-    //console.log('Mpv STDIO: %o', mpvStdio.stdio)
+    //if(debug){console.debug('Mpv STDIO: %o', mpvStdio.stdio)}
     const mpv = child_process.spawn('mpv', mpvargs.split(' '),mpvStdio);
     //mpv.stdin._writableState.highWaterMark=1024;
 
     //mpv.connected
     mpv.on('exit', ()=>{
-        console.log('Player closed, exit...');
+        console.info('Player closed, exit...');
         process.exit();
     });
     //function setMpvIPC(){
@@ -968,18 +1009,18 @@ async function  main() {
             }).on('error', (err)=>{
                 //console.log('MPV Exit Code: ' + mpv.exitCode)
                 //console.log('MPV Error Code: ' + err);
-                console.log('Mpv IPC Channel Unavailable yet.' + err);
+                if(debug){console.debug('Mpv IPC Channel Unavailable yet.' + err);}
                 //process.exit();
             }).on('data', async (rawEvents)=>{
                 // Multiline events  can come so:
                 const eventsList = rawEvents.toString().split('\n').slice(0,-1);
                 for (let strEvent of eventsList) {
                     let event = JSON.parse(strEvent);
-                    console.log('IPC Event: ');
-                    console.dir(event);
+                    if(debug){console.debug('IPC Event: ');}
+                    if(debug){console.dir(event);}
                     // console.dir(JSON.parse(event));
                     if ( event && event.event === "seek" ){
-                        console.log('Seek ');
+                        if(debug){console.debug('Seek ');}
                     } else if ( event.event === 'end-file' && event.reason!=='quit' ){
                         //client.write('{ "command": ["drop-buffers"] }\n');
                         //client.write('{ "command": ["set", "idle", "yes"] }\n');
@@ -997,10 +1038,10 @@ async function  main() {
                             //playlist_entry_id = event.playlist_entry_id;
                         }*/
                         let cid = event.playlist_entry_id;
-                        console.dir(results);
-                        console.dir(results.slice(cid-1));
+                        if(debug){console.dir(results);}
+                        if(debug){console.dir(results.slice(cid-1));}
                         if(!results.slice(cid-1).some(e=>e>=2)){
-                            console.log('OPENNING NEXT FILE ');
+                            if(debug){console.debug('OPENNING NEXT FILE ');}
                             //client.write('{ "command": ["stop", "keep-playlist"] }\n');
                             client.write('{ "command": ["stop"] }\n');
                             next=1
@@ -1040,12 +1081,12 @@ async function  main() {
                 break;
             };
             if (results.every(r=>r<2)){
-                console.log('All videos had errors...');
+                console.info('All videos had errors...');
                 break;
             }else if (results.filter(e=>e>1).every(r=>r>=2)){
                 if (!Object.entries(metadata).every(([l,e])=>{return e.isLive})){
-                    console.log('ALl urls are non live.');
-                    console.log('All videos already downloaded...');
+                    console.info('ALl urls are non live.');
+                    console.info('All videos already downloaded...');
                     break;
                 }
             };
@@ -1060,11 +1101,11 @@ async function  main() {
         if(result>=2){
             fd++;
         }
-        console.log('Trying to open input URL: ' + urls[eid]);
-        console.log('Results ' + results);
+        if(debug){console.debug('Trying to open input URL: ' + urls[eid]);}
+        if(debug){console.debug('Results ' + results);}
     };
-    console.log('No more videos to play.');
+    console.info('No more videos to play.');
     //mpv.kill();
 }
 main();
-console.log('OUT');
+if(debug){console.debug('OUT');}
