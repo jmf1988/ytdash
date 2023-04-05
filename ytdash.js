@@ -3,6 +3,7 @@
 "use strict";
 const http = require('https'),
       net = require('net'),
+      fs = require('fs'),
       child_process = require('child_process'),
       parseString = require('xml2js').parseString,
       zlib = require('zlib'),
@@ -11,8 +12,11 @@ const http = require('https'),
       metadataUrl = 'https://www.youtube.com/youtubei/v1/player?key=' + apiKey,
       args = process.argv.slice(2),
       ffmpegURI = '/usr/bin/ffmpeg',
-      debug = args.includes('-debug');
-
+      debug = args.includes('-debug'),
+	  cacheDir = process.env.HOME + '/.cache/ytdashjs',
+	  configDir = process.env.HOME + '/.config/ytdashjs'
+	  ;
+	  
 // Variables:
 let     ffbaseinputs = '',
         ffbaseargs = '',
@@ -133,11 +137,12 @@ async function getMetadata(url, headers={}) {
     if (!videoDetails.isLive) {
         console.warn('Non-live videos have slow download because of Youtube rules so video bandwidth adaptive mode is disabled.');
     }
-    //console.log("VideoID: %o", videoId);
+    child_process.execFile('notify-send', [mediaMetadata.title, mediaMetadata.author])
     console.info("Status: %o", playabilityStatus.status);
     console.info('Title: %o', videoDetails.title);
     console.info('Author: %o', videoDetails.author);
     console.info('Is Live: ', (videoDetails.isLive||false));
+    console.info('Is PostLive: ', (videoDetails.isPostLiveDvr||false));
     if (latencyClass) {
         mediaMetadata.latencyClass = latencyClass.slice(42).replace('_',' ');
         console.info('Latency Class: %o', mediaMetadata.latencyClass);
@@ -887,7 +892,7 @@ async function openURL(url,fd, mpv){
 });*/
 async function apiSearch(query){
     let parms,items,apiBaseURL,apiParameters,midURL,apiUrlCheckLive,apiType,
-    urlEnd,apiURL,jsonResponse,videoIds = [];
+    urlEnd,apiURL,jsonResponse,videoIds = [], cacheFilename = cacheDir + '/';
     parms = {
     'eventType':'completed',
     'sortBy':'relevance',
@@ -905,8 +910,6 @@ async function apiSearch(query){
     }
     apiBaseURL = 'https://www.googleapis.com/youtube/v3/';
     apiParameters = {};
-    apiParameters['part'] = 'snippet';
-    apiParameters['key'] = 'AIzaSyBSnNQ7qOmLPxC5CaHH9BWHqAgrecwzCVA';
     midURL = new URLSearchParams(apiParameters).toString();
     apiUrlCheckLive = apiBaseURL + 'videos?' + midURL;
     apiType = 'search'
@@ -924,27 +927,47 @@ async function apiSearch(query){
     apiParameters['maxResults'] = 5
     apiParameters['videoEmbeddable'] = 'any'
     apiParameters['videoSyndicated'] = 'true'
-    apiParameters['fields'] = 'items(id,snippet/title,snippet/' +
-                              'channelTitle,snippet/description,' +
-                              'snippet/liveBroadcastContent,' +
-                              'snippet/publishedAt)'
     apiParameters['q'] = query;
     if (args.includes('-n')){apiParameters['eventType']='completed'}
     if (args.includes('-u')){apiParameters['eventType']='upcoming'}
     if (args.includes('-mr')){
         apiParameters['maxResults'] = args.slice(args.indexOf('-mr'))[1];
     }
-    urlEnd = new URLSearchParams(apiParameters).toString();
-    apiURL = apiBaseURL + apiType + '?' + urlEnd;
-    if(debug){console.debug("API URL: " + apiURL);}
-    jsonResponse = await request(apiURL, "GET", {'Referer':'www.youtube.com/test'});
-    jsonResponse = JSON.parse(jsonResponse[1]);
-    if(debug){console.dir(jsonResponse['items']);}
-    items = jsonResponse.items;
-    if (items){
-        items.forEach(item=>videoIds.push(item.id.videoId));
-        if(debug){console.dir("item " + videoIds);}
-    }
+    for (let parameter in apiParameters) {
+		cacheFilename += parameter + '=' + apiParameters[parameter] + '+';
+	}
+	cacheFilename = cacheFilename.slice(0,249);
+	cacheFilename += '.cache';
+	if(fs.existsSync(cacheFilename)) {
+		let stats,cachedResponse;
+		stats = fs.statSync(cacheFilename);
+		if (((new Date() - stats.birthtime)/1000)/60 < 24*60 ){
+			cachedResponse = fs.readFileSync(cacheFilename);
+			items = JSON.parse(cachedResponse);
+		}
+	}
+    if (!items) {
+		apiParameters['part'] = 'snippet';
+	    apiParameters['key'] = 'AIzaSyBSnNQ7qOmLPxC5CaHH9BWHqAgrecwzCVA';
+	    
+	    apiParameters['fields'] = 'items(id,snippet/title,snippet/' +
+	                              'channelTitle,snippet/description,' +
+	                              'snippet/liveBroadcastContent,' +
+	                              'snippet/publishedAt)'
+	    urlEnd = new URLSearchParams(apiParameters).toString();
+	    apiURL = apiBaseURL + apiType + '?' + urlEnd;
+	    if(debug){console.debug("API URL: " + apiURL);}
+	    jsonResponse = await request(apiURL, "GET", {'Referer':'www.youtube.com/test'});
+	    if (jsonResponse[1]){
+			jsonResponse = JSON.parse(jsonResponse[1]);
+	        items = jsonResponse.items;
+	        if(debug){console.dir(items);}
+		    fs.writeFileSync(cacheFilename, JSON.stringify(items));
+		    
+	    }
+	} else { console.info('Using cached search results.') }
+	items.forEach(item=>videoIds.push(item.id.videoId));
+	if(debug){console.dir("videoIds" + videoIds);}
     return videoIds;
 }
 //if(debug){console.debug('URLS' + urls);}
@@ -953,7 +976,11 @@ let results=[0],
 var metadata={},videoId;
 // MAIN ULTRA_ASYNC_GENERIC_LOOP_2000:
 async function  main() {
-    let mpvStdio = {stdio: ['ignore', process.stdout, process.stderr]},
+	// let cacheDir = process.env.HOME + '/.cache/ytdashjs';
+	// let configDir = process.env.HOME + '/.config/ytdashjs';
+	fs.mkdirSync(cacheDir, {recursive:true})
+	fs.mkdirSync(configDir, {recursive:true})
+	let mpvStdio = {stdio: ['ignore', process.stdout, process.stderr]},
         parameter,urls;
     if(debug){console.debug('ARGS: %o', args)}
     if (args.includes('-s')){
