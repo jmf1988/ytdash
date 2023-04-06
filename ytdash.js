@@ -31,7 +31,7 @@ let     ffbaseinputs = '',
         maxWidth = 1360,
         maxFps = 60,
         maxHeight = 720;
-var httpRetries = 5,
+var httpRetries = 8,
         client;
 // ffmpeg base Args (all single spaces or ffmpeg fails 'cause split()):
 ffbaseargs += ffbaseinputs + '-y -v 0 -flags +low_delay -thread_queue_size 512 -i -';
@@ -117,6 +117,7 @@ async function getMetadata(url, headers={}) {
     jsonResponse = JSON.parse(postRes[1]);
     //console.dir(jsonResponse.microformat);
     videoDetails = jsonResponse.videoDetails;
+    //console.dir(videoDetails);
     playabilityStatus = jsonResponse.playabilityStatus;
     if (playabilityStatus.status !== 'OK'){
         console.info('Stream status: %o', playabilityStatus.status);
@@ -127,22 +128,23 @@ async function getMetadata(url, headers={}) {
     //console.dir(streamingData);
     mediaMetadata.expiresInSeconds = streamingData.expiresInSeconds;
     formats = streamingData.formats;
+    //console.dir(formats);
     adaptiveFormats = streamingData.adaptiveFormats;
     //.sort((a,b)=>{return a.height-b.height;});
     // Get and log video Details:
-    mediaMetadata.isLive = videoDetails.isLive;
+    mediaMetadata.isLive = (videoDetails.isLive||false);
+    mediaMetadata.isPostLiveDvr = (videoDetails.isPostLiveDvr||false);
     mediaMetadata.title = videoDetails.title.replace(/,/g,';');
     mediaMetadata.author = videoDetails.author.replace(/,/g,';');
     latencyClass = videoDetails.latencyClass;
     if (!videoDetails.isLive) {
         console.warn('Non-live videos have slow download because of Youtube rules so video bandwidth adaptive mode is disabled.');
     }
-    child_process.execFile('notify-send', [mediaMetadata.title, mediaMetadata.author])
     console.info("Status: %o", playabilityStatus.status);
     console.info('Title: %o', videoDetails.title);
     console.info('Author: %o', videoDetails.author);
-    console.info('Is Live: ', (videoDetails.isLive||false));
-    console.info('Is PostLive: ', (videoDetails.isPostLiveDvr||false));
+    console.info('Is Live: ', mediaMetadata.isLive);
+    console.info('Is PostLive: ', mediaMetadata.isPostLiveDvr);
     if (latencyClass) {
         mediaMetadata.latencyClass = latencyClass.slice(42).replace('_',' ');
         console.info('Latency Class: %o', mediaMetadata.latencyClass);
@@ -154,7 +156,7 @@ async function getMetadata(url, headers={}) {
         console.info(videoDetails.shortDescription);
         //console.dir(console.dir(videoDetails.shortDescription.replace('\n\' \+', '')));
     }
-    if (videoDetails.isLive){
+    if (videoDetails.isLive || mediaMetadata.isPostLiveDvr){
         dashManifestURL = streamingData.dashManifestUrl;
         if(debug){console.debug('DASH Manifest URL:'+ dashManifestURL);}
         // Request manifest compressed 'cause too big:
@@ -255,7 +257,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
             let r;
             //onErrorStartTime = performance.now();
 
-            r = http.request(options, function(res) {
+            r = http.request(options, async function(res) {
                 let responseHeaders = res.headers;
                 var statcode = res.statusCode;
                 if(debug){console.debug("REUSED SOCKET: " + r.reusedSocket);}
@@ -342,8 +344,6 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
                                             //res.pause();
                                             ioo.end();
                                             //ioo.uncork();
-                                            //ioo.uncork();
-                                            //r.emit('end', '');
                                             //res.end()
                                             ffmpeg.kill('SIGKILL');
                                             res.destroy(new Error('Next item requested.'));
@@ -351,12 +351,9 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
                                             //r.destroy( new Error('Next item requested '));
                                         }
                                     } else{
-                                        console.info('Http error on the other media content, cancelling ');
-                                        res.destroy(new Error('Http error on the other media content, cancelling '));
+                                        res.destroy(new Error('Http error in the other request...'));
                                         //r.destroy(new Error('Http error on the other media content, cancelling '));
-                                        //res.emit('end', null);
-                                        //return
-
+                                        
                                     }
                                 //  }
                             } else {
@@ -390,37 +387,34 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
                         if(debug){console.debug("Error on response, cancelling: " + err);}
                         //ffmpeg.kill('SIGKILL');
                     });*/
-                } else if(statcode === 403||statcode === 404||statcode === 503){
+                //} else if(statcode === 403||statcode === 404||statcode === 503){
+                } else {
                     if (httpRetries>0) {
-                            (function loop() {
-                            setTimeout(function() {
-                                // Escriba su lógica aquí
-                                retriableRequest();
-                                httpRetries--;
-                                loop();
-                            }, retrySecs*2000);
-                            })();
                             httpRetries--;
-                        console.info("Retrying, remaining tries: " + httpRetries);
-                        //res.emit('end', null);
-                        //retriableRequest();
-
+                            console.info("Retrying, remaining tries: " + httpRetries);
+							await new Promise((r)=>{setTimeout(r, 2000)});
+							return retriableRequest();
                     } else{
-                        console.info('HTTP error code: ' + res.statusCode);
-                        res.destroy(new Error('Http error on the other media content, cancelling '));
+                        //if(debug){console.debug('HTTP error ' + res.statusCode)};
+                        let errorMsg = 'HTTP Error ' + res.statusCode +
+                                              ' retries exhuasted.';
+                        res.destroy(new Error(errorMsg));
                         //resolve(null);
                     }
-                } else{
+                }
+                /*} else{
                     res.destroy(new Error('HTTP error code: ' + statcode));
 
-                }
+                }*/
             });
             r.on('error', async function(err) {
                 hadError = true;
                 if ( err.message !== 'Next item requested.'){
                     console.info("Got error: " + err.message);
-                    console.info("Error code: " + err.code);//if (r.reusedSocket && err.code === 'ECONNRESET') {
-                }
+                    if ( err.code ) {
+						console.info("Error code: " + err.code);//if (r.reusedSocket && err.code === 'ECONNRESET') {
+					}
+				}
                 /*if (httpRetries>1) {
                     /*(function loop() {
                         setTimeout(function() {
@@ -452,7 +446,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg) {
                     }
                     //
                     if(debug){console.debug("Resolving...");}
-                    resolve(1);
+                    resolve([0,0,0,0,0]);
                     if(debug){console.debug("Resolved...");}
                 }
             });
@@ -486,8 +480,12 @@ function segmentCreator(sq, murls, fd, mpv, isLive){
             //let videoResponse, audioResponse;
             httpRetries=5;
             //beforeRequest = performance.now();
-            audioRequest=request(murls[0],'GET',{},ffmpeg.stdio[3],ffmpeg);
-            videoRequest=request(murls[1],'GET',{},ffmpeg.stdio[4],ffmpeg);
+            try {
+				audioRequest=request(murls[0],'GET',{},ffmpeg.stdio[3],ffmpeg);
+				videoRequest=request(murls[1],'GET',{},ffmpeg.stdio[4],ffmpeg);
+			} catch (error) {
+				console.info('Error on Media requests: ' + error)
+			}
             if(debug){console.debug('Audio PREresolved: ');}
             if (isLive){
                 ffmpeg.on('close',()=>{
@@ -647,12 +645,16 @@ async function openURL(url,fd, mpv){
             //deadVideoIds++;
             console.info('Skipping Video Id: %s.', videoId);
             return 1;
-        } else{
-            metadata[videoId].dateTime = dateTime;
-        }
+	} else{
+		metadata[videoId].dateTime = dateTime;
+		
+	}
+	child_process.execFile('notify-send', ['Ytdash: ' + metadata[videoId].title,
+                                           metadata[videoId].author]);
+    //console.dir(Object.entries(metadata))
     //console.dir(metadata[videoId]);
-    // Live or not?:
-    if (metadata[videoId].isLive){
+    // if live or post live use DASH manifest as URLs source:
+    if (metadata[videoId].isLive || metadata[videoId].isPostLiveDvr){
         aid=-1;
         vid=3;
         ffmuxargs = ffmuxargs.replace('-f nut','-f mpegts');
@@ -672,10 +674,15 @@ async function openURL(url,fd, mpv){
         }
         manifestSequencePath = 'sq/';
         let manLessSequencePath = '&sq='; // bandwidth limited by YouTube;
-        // Get Live HEADers metadata:
-        let headRes = await request(aurl, 'HEAD');
-        sq = headRes[0]['x-head-seqnum'] - 3;
-        //metadata[videoId]['x-head-time-sec'] = headRes[0]['x-head-time-sec'];
+		// Get Live HEADers metadata:
+		let headRes = await request(aurl, 'HEAD');
+		let headSeqNum = headRes[0]['x-head-seqnum'] - 3;
+		sq = headSeqNum;
+		if (metadata[videoId].isPostLiveDvr){
+			let backbufferTotalSeqNum = (12*60*60)/segmentDurationSecs;
+			sq = Math.max(0, headSeqNum - backbufferTotalSeqNum);
+		}
+		//metadata[videoId]['x-head-time-sec'] = headRes[0]['x-head-time-sec'];
         saurl = aurl + manifestSequencePath + sq;
         svurl = vurl + manifestSequencePath + sq; //+ '&range=0-1024000';
     }else{
@@ -683,6 +690,7 @@ async function openURL(url,fd, mpv){
         ffmuxargs = ffmuxargs.replace('-f mpegts','-f nut');
         vid = 2; // Defaulting to low/medium video quality by sort.order:
         audioMetadata = metadata[videoId].audio;
+        // console.dir(metadata[videoId])
         videoMetadata = await metadata[videoId].video;
         prefAudioCodecs = ['opus', 'mp4a'];
         prefVideoCodecs = ['vp9', 'avc1','av01'];
@@ -710,34 +718,6 @@ async function openURL(url,fd, mpv){
             }
             if (vcodec){break;}
         }
-        /*prefAudioCodecs.forEach(codec=>{
-            console.log('CODECCCCCCCCCCCC:' + codec)
-            if (codec === 'opus') {
-                prefAudioFormat = 'webm';
-            } else {
-                prefAudioFormat = 'mp4';
-            }
-            audioFormat = audioMetadata[prefAudioFormat];
-            if (audioFormat){
-                acodec = audioFormat[codec];
-                if (acodec){return;}
-                console.dir(audioFormat)
-            }
-        });
-        prefVideoCodecs.forEach(codec=>{
-            if (codec === 'av01' || codec === 'avc1') {
-                prefVideoFormat = 'mp4';
-            } else {
-                prefVideoFormat = 'webm';
-
-            }
-            videoFormat = videoMetadata[prefVideoFormat];
-            if (videoFormat){
-                vcodec = videoFormat[codec];
-                if (vcodec){return;}
-                console.dir(videoFormat)
-            }
-        });*/
         aid=acodec.length - 1; // Defaulting to highest audio quality by sort.order:
         if(vcodec.length < vid + 1){ vid = vcodec.length - 1; }; // Pick highest available-
         //console.dir(metadata[videoId].video.mp4);
@@ -785,8 +765,15 @@ async function openURL(url,fd, mpv){
             return 2;
             //break;
         }
+        if (!headers){
+			let errorMsg = 'Unable to stream media content, giving up.'
+			child_process.execFile('notify-send', ['YTdash: ' +
+                                           metadata[videoId].title, errorMsg])
+			console.info(errorMsg);
+			return 1;
+		}
         //console.dir(headers)
-        if (metadata[videoId].isLive){
+        if (metadata[videoId].isLive || metadata[videoId].isPostLiveDvr){
             bandEst = headers['x-bandwidth-est']/8/1024;
             bandEst2 = headers['x-bandwidth-est2']/8/1024;
             bandEst3 = headers['x-bandwidth-est3']/8/1024;
@@ -913,6 +900,7 @@ async function apiSearch(query){
     midURL = new URLSearchParams(apiParameters).toString();
     apiUrlCheckLive = apiBaseURL + 'videos?' + midURL;
     apiType = 'search'
+    apiParameters['q'] = query;
     apiParameters['type'] = 'video'
     apiParameters['order'] = 'relevance'
     apiParameters['eventType'] = 'live'
@@ -927,7 +915,6 @@ async function apiSearch(query){
     apiParameters['maxResults'] = 5
     apiParameters['videoEmbeddable'] = 'any'
     apiParameters['videoSyndicated'] = 'true'
-    apiParameters['q'] = query;
     if (args.includes('-n')){apiParameters['eventType']='completed'}
     if (args.includes('-u')){apiParameters['eventType']='upcoming'}
     if (args.includes('-mr')){
@@ -943,7 +930,15 @@ async function apiSearch(query){
 		stats = fs.statSync(cacheFilename);
 		if (((new Date() - stats.birthtime)/1000)/60 < 24*60 ){
 			cachedResponse = fs.readFileSync(cacheFilename);
-			items = JSON.parse(cachedResponse);
+			if(cachedResponse){
+				try {
+					items = JSON.parse(cachedResponse);
+				} catch {
+					console.info("Cannot parse JSON from cached file.");
+				}
+			} else {
+				if(debug){console.debug("Cannot get JSON from cache file.");}
+			}
 		}
 	}
     if (!items) {
@@ -1111,7 +1106,9 @@ async function  main() {
                 console.info('All videos had errors...');
                 break;
             }else if (results.filter(e=>e>1).every(r=>r>=2)){
-                if (!Object.entries(metadata).every(([l,e])=>{return e.isLive})){
+				// if some video/s are currently non-live from metadata:
+                //if (!Object.entries(metadata).every(([l,e])=>{return e.isLive})){
+                if (Object.entries(metadata).every(videoid=>!videoid[1].isLive)){
                     console.info('ALl urls are non live.');
                     console.info('All videos already downloaded...');
                     break;
