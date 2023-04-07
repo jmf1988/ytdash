@@ -693,10 +693,10 @@ async function openURL(url,fd, mpv){
         saurl = aurl + manifestSequencePath + sq;
         svurl = vurl + manifestSequencePath + sq; //+ '&range=0-1024000';
     }else{
-		/*if(!args.includes('-n')){
+		if(!args.includes('-n')){
 			console.info('This video is not a live stream, pass -n option to play them.')
-			
-		}*/
+			return 0
+		}
         let prefAudioFormat,prefVideoFormat,prefAudioCodecs,prefVideoCodecs,videoMetadata, audioMetadata, audioFormat, videoFormat;
         ffmuxargs = ffmuxargs.replace('-f mpegts','-f nut');
         vid = 2; // Defaulting to low/medium video quality by sort.order:
@@ -996,8 +996,7 @@ async function apiSearch(query){
 			jsonResponse = JSON.parse(jsonResponse[1]);
 	        items = jsonResponse.items;
 	        if(debug){console.dir(items);}
-	        console.dir(items);
-		    fs.writeFileSync(cacheFilename, JSON.stringify(items));
+	        fs.writeFileSync(cacheFilename, JSON.stringify(items));
 		    
 	    }
 	} else { console.info('Using cached search results.') }
@@ -1091,10 +1090,15 @@ async function  main() {
 		if(args.includes('-n')){
 			result=openURL(urls[eid], fd, mpv);eid++;fd++;
 			if(urls.length <= eid + 1){break;}
+			if (result ===3){break;}
 		}else{
 			result=await openURL(urls[eid], fd, mpv);
+			if (!result){
+				mpv.kill();
+				break;
+			}
 			eid++;
-			if(urls.length <= eid + 1){eid=0;}
+			if(urls.length < eid + 1){eid=0;}
 		}
 	}
     
