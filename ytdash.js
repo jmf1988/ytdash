@@ -1117,7 +1117,7 @@ async function  main() {
     mpv.on('message', message=>{
         let event, itemEntryId, reason;
         if(debug){console.log(message)}
-        console.log(message)
+        //console.log(message)
         event = message.event;
         itemEntryId = message.playlist_entry_id;
         reason = message.reason;
@@ -1154,7 +1154,7 @@ async function  main() {
     while(true){
         if(args.includes('-n')){
             mpv.send({ "command": ["loadfile", "fd://" + fd, 'append-play'] });
-            result = openURL(urls[eid], fd, mpv);
+            result = await openURL(urls[eid], fd, mpv);
             results.splice(eid, 1, result);
             fd++;
             eid++;
