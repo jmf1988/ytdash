@@ -121,7 +121,7 @@ let mpvargs =   '--idle ' +
                   '--input-ipc-client=fd://3 ' +
                  //'--really-quiet'+
                  //' - ' +
-                 '--keep-open=no';
+                 '--keep-open';
 if (fullscreen){mpvargs += ' --fullscreen'}
 
 async function getMetadata(url, headers={}) {
