@@ -12,12 +12,14 @@ const http = require('https'),
       metadataUrl = 'https://www.youtube.com/youtubei/v1/player?key=' + apiKey,
       args = process.argv.slice(2),
       ffmpegURI = '/usr/bin/ffmpeg',
-      live = args.includes('-n'),
+      live = !args.includes('-n'),
       debug = args.includes('-debug'),
       fixed = args.includes('-fixed')||args.includes('-f'),
       fullscreen = args.includes('-fullscreen')||args.includes('-F'),
       extraInfo = args.includes('-e')||args.includes('-extra'),
       help = args.includes('-help')||args.includes('-h'),
+      order = args.includes('-order'),
+      orderType = args.slice(args.indexOf('-order'))[1],
       cacheDir = process.env.HOME + '/.cache/ytdashjs',
       configDir = process.env.HOME + '/.config/ytdashjs'
       ;
@@ -40,6 +42,7 @@ const metaPostHeaders = {
 if (help){
 	console.info('Usage: ytdash [(URLs|Video Ids)|-s search term] [Options]');
 	console.info('	-s [term]		Search mode, uses Youtube Api to search for videos');
+	console.info('	-order			Sort search results found by this order.');
 	console.info('	-n 			Enable streaming of non-live videos found. (Partial support)');
 	console.info('	-mh [number]		Maximum video height allowed.');
 	console.info('	-mw [number]		Maximum video width allowed.');
@@ -50,13 +53,19 @@ if (help){
 	console.info('	-debug			Show debugging console output.');
 	process.exit();
 }
-
+if (order) {
+	let choices=['relevance', 'viewCount', 'videoCount', 'date', 'rating', 'title'];
+	if (!choices.includes(orderType)){
+		console.info('Invalid order type input. Choices are: %s', choices);
+		process.exit();
+	}
+}
 // Variables:
 let     ffmuxinargs,
         ffmuxoutargs,
         urlPassthrough=1,
         ffmuxargs,
-        next,
+        next=0,
         maxWidth = 2080,
         maxFps = 60,
         maxHeight = 720;
@@ -379,8 +388,9 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
 										//res.end()
 										//mpv.send({'command':['playlist-remove', playlistEntryId]})
 										//mpv.send({'command':['playlist-remove', 'current']})
-										ffmpeg.kill('SIGKILL');
 										ioo.end();
+										ffmpeg.kill('SIGKILL');
+										//ioo.end();
 										res.destroy(new Error('Next item requested.'));
 										//res.destroySoon()
 										//r.destroy( new Error('Next item requested '));
@@ -406,7 +416,8 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                         if(debug){console.debug("==>>> RUNNiNG REQUEST END EVENT ");}
                         // Close fds or ffmpeg don't close:
                         if(type==='GET'){
-                            if (ioo!==0 ){ioo.end();}
+                            if (ioo!==0 ){ioo.end();
+								}
                             if (next){
                                 if(debug){console.debug('Next item requested. ');}
                                 //res.destroy();
@@ -822,13 +833,21 @@ async function openURL(url,fd, mpv){
         mpv.send({ "command": ["loadfile", "fd://" + fd, 'append-play'] });
     }*/
     //console.debug(ipcString);
-    if (!args.includes('-n')){
-        let loadfileMode, ipcCommand;
-        let mpvTitle = `${metadata[videoId].title.replace(':',';') + ' - ' + metadata[videoId].author}`;
+    let loadfileMode, ipcCommand;
+	let mpvTitle = `${metadata[videoId].title.replace(':',';') + ' - ' + metadata[videoId].author}`;
+	if (!args.includes('-n')){
         ipcCommand = { "command": ["set",  "force-media-title", mpvTitle]};
         if(debug){console.debug(ipcCommand);}
         mpv.send(ipcCommand);
-    }
+    }else {
+		//ipcCommand = ;
+		if (urlPassthrough){
+			mpv.send({ "command": ["loadfile", `${svurl}`, 'append-play',
+			    				   "audio-file=" + `${saurl}`]});
+			mpv.send({ "command": ["set",  "force-media-title", mpvTitle]});
+			return 2;
+		}
+	}
     //console.log(ipcCommand);
     //mpv.send({ command: [ 'playlist-play-index', next - 1 ] })
     videoQualitiesQuantity = metadata[videoId].video.length;
@@ -990,10 +1009,9 @@ async function apiSearch(query){
     apiParameters['q'] = query;
     apiParameters['type'] = 'video'
     apiParameters['order'] = 'relevance'
-    apiParameters['eventType'] = 'live'
     apiParameters['videoDimension'] = '2d'
     //apipar['regionCode'] = 'AR'
-    apiParameters['safeSearch'] = 'moderate'
+    apiParameters['safeSearch'] = 'none'
     apiParameters['videoDuration'] = 'any'
     apiParameters['videoType'] = 'any'
     apiParameters['type'] = 'video'
@@ -1002,7 +1020,9 @@ async function apiSearch(query){
     apiParameters['maxResults'] = 5
     apiParameters['videoEmbeddable'] = 'any'
     apiParameters['videoSyndicated'] = 'true'
-    if (args.includes('-n')){apiParameters['eventType']='completed'}
+    if (order){apiParameters['order'] = orderType;}
+    if (!args.includes('-n')){apiParameters['eventType'] = 'live'}
+    if (args.includes('-c')){apiParameters['eventType']='completed'}
     if (args.includes('-u')){apiParameters['eventType']='upcoming'}
     if (args.includes('-mr')){
         apiParameters['maxResults'] = args.slice(args.indexOf('-mr'))[1];
@@ -1129,7 +1149,7 @@ async function  main() {
             next=itemEntryId
             //console.log('THIS IS THE NEXT SHIT' + next)
         }*/
-        if ( message.event === 'end-file' && reason==='stop'){
+        if ( message.event === 'end-file' && reason==='stop' && live){
             //next=itemEntryId;
             next=1
         }
@@ -1143,25 +1163,29 @@ async function  main() {
     //mpv.send({ "command": ["observe_property", 1, "cache-buffering-state"] });
     mpv.send({ "command": ["observe_property", 1, "playlist-pos"] });
     //mpv.send({ "command": ["observe_property", 1, "playlist-next"] });
-    if(!args.includes('-n')){
+    if(live){
         mpv.send({ "command": ["loadfile", "fd://4", 'append-play']});
-        mpv.send({ "command": ["set", "loop-playlist", "inf"]});
+		mpv.send({ "command": ["set", "loop-playlist", "inf"]});
     }
     let result,
         results=[],
         eid=0,
         fd=4;
     while(true){
-        if(args.includes('-n')){
-            mpv.send({ "command": ["loadfile", "fd://" + fd, 'append-play'] });
+        if(!live){
             result = await openURL(urls[eid], fd, mpv);
             results.splice(eid, 1, result);
             fd++;
             eid++;
             if(eid > urls.length - 1){
+				/*eid=0;
+				fd=4;
                 for (let result of results){
-                    await result
-                }
+					if (result !== 1){
+						mpv.send({ "command": ["loadfile", "fd://" + fd, 'append-play'] });
+						fd++
+					}
+                }*/
                 break;
             }
             //if (result !==2){break;}
