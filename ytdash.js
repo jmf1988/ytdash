@@ -835,7 +835,7 @@ async function openURL(url,fd, mpv){
     //console.debug(ipcString);
     let loadfileMode, ipcCommand;
 	let mpvTitle = `${metadata[videoId].title.replace(':',';') + ' - ' + metadata[videoId].author}`;
-	if (!args.includes('-n')){
+	if (live){
         ipcCommand = { "command": ["set",  "force-media-title", mpvTitle]};
         if(debug){console.debug(ipcCommand);}
         mpv.send(ipcCommand);
@@ -843,8 +843,7 @@ async function openURL(url,fd, mpv){
 		//ipcCommand = ;
 		if (urlPassthrough){
 			mpv.send({ "command": ["loadfile", `${svurl}`, 'append-play',
-			    				   "audio-file=" + `${saurl}`]});
-			mpv.send({ "command": ["set",  "force-media-title", mpvTitle]});
+			    				   "audio-file=" + `${saurl}`+",force-media-title=" + mpvTitle ]});
 			return 2;
 		}
 	}
