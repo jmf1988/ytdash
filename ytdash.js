@@ -1092,7 +1092,8 @@ async function  main() {
                        e!=='-mf' && (e.startsWith('http') ||
                        e.length === 11 ) && e!=='-F' && e!=='-fixed' &&
                        e!=='-fullscreen' && e!=='-e' && e!=='-extra' &&
-                       e!=='-h' && e!=='-help')
+                       e!=='-h' && e!=='-help' && e!=='-order' && 
+                       e!==orderType);
     if (args.includes('-s')){
         parameter = args.slice(args.indexOf('-s'))[1];
         if (parameter){
