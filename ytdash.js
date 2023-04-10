@@ -383,7 +383,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
 											console.debug("Stopping Playlist Entry Id: " +
 											              playlistEntryId);
 										}
-										//res.pause();
+										res.pause();
 										//ioo.uncork();
 										//res.end()
 										//mpv.send({'command':['playlist-remove', playlistEntryId]})
