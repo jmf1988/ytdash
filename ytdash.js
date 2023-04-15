@@ -7,7 +7,7 @@ const http = require('https'),
       child_process = require('child_process'),
       parseString = require('xml2js').parseString,
       zlib = require('zlib'),
-      keepAliveAgent = new http.Agent({ keepAlive: true, scheduling: 'fifo' }),
+      keepAliveAgent = new http.Agent({ keepAlive: true, scheduling: 'fifo', keepAliveMsecs:0,  timeout:12000  }),
       apiKey='AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
       metadataUrl = 'https://www.youtube.com/youtubei/v1/player?key=' + apiKey,
       args = process.argv.slice(2),
@@ -68,7 +68,7 @@ let     ffmuxinargs,
         next=0,
         maxWidth = 2080,
         maxFps = 60,
-        maxHeight = 720;
+        maxHeight = 1080;
 
 for (let videoProperty of ['-mh', '-mw', '-mf']){
     if(args.includes(videoProperty)){
@@ -216,10 +216,18 @@ async function getMetadata(url, headers={}) {
     }else {
         adaptiveFormats.sort((a,b)=>{return a.bitrate-b.bitrate;});
         // Filter and create registers by type, container and codec:
+        let maxWidthFound = 0, maxHeightFound=0,  maxFpsFound=0;
         for (let format of adaptiveFormats){
             if (format.width > maxWidth) continue;
             if (format.height > maxHeight) continue;
             if (format.fps > maxFps) continue;
+            // Filter prefering video properties over codec type:
+            if(format.width < maxWidthFound) continue;
+            if(format.height < maxHeightFound) continue;
+            if(format.fps < maxFpsFound) continue;
+            maxWidthFound = format.width;
+            maxHeightFound = format.height;
+            maxFpsFound = format.fps;
             let mimeType = format.mimeType.split('; ');
             let typeContainer = mimeType[0].split('/');
             let codecs = mimeType[1].split('=')[1];
@@ -294,7 +302,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
         function retriableRequest(){
             let r;
             //onErrorStartTime = performance.now();
-            r = http.request(options, function(res) {
+            r = http.request(options, async function(res) {
                 let responseHeaders = res.headers;
                 var statcode = res.statusCode;
                 if(debug){console.debug("REUSED SOCKET: " + r.reusedSocket);}
@@ -365,7 +373,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
 							}
 						}
                     });*/
-                    res.on("data", function(chunk) {
+                    res.on("data", async function(chunk) {
                         bytesWritten += chunk.length;
                         let canWrite;
                         //console.log(`Received ${chunk.length} bytes of data.`);
@@ -383,17 +391,15 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
 											console.debug("Stopping Playlist Entry Id: " +
 											              playlistEntryId);
 										}
-										res.pause();
+										await res.pause();
 										//ioo.uncork();
-										//res.end()
+										
 										//mpv.send({'command':['playlist-remove', playlistEntryId]})
 										//mpv.send({'command':['playlist-remove', 'current']})
-										ioo.end();
-										ffmpeg.kill('SIGKILL');
-										//ioo.end();
-										res.destroy(new Error('Next item requested.'));
-										//res.destroySoon()
-										//r.destroy( new Error('Next item requested '));
+										await ioo.end();
+										await ffmpeg.kill('SIGKILL');
+										await res.destroy(new Error('Next item requested.'));
+										r.destroy( new Error('Next item requested '));
 									}
 								} else{
 									res.destroy(new Error('Http error in the other request...'));
@@ -439,7 +445,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                     if (httpRetries>0) {
                             httpRetries--;
                             console.info("Retrying, remaining tries: " + httpRetries);
-							new Promise((r)=>{setTimeout(r, retrySecs)});
+							await new Promise((r)=>{setTimeout(r, retrySecs)});
                             retriableRequest();
                     } else{
                         //if(debug){console.debug('HTTP error ' + res.statusCode)};
@@ -454,7 +460,8 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
 
                 }*/
             });
-            r.on('error', async function(err) {
+            //r.on('socket', so=>{console.log('socket'+so)});
+            r.on('error', function(err) {
                 hadError = true;
                 if ( err.message !== 'Next item requested.'){
                     console.info("Got error: " + err.message);
@@ -482,17 +489,18 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                     //ioo.end();
                     console.info("Trying to resume stream from byte=" + bytesWritten);
                     options.headers['Range'] = 'bytes=' + bytesWritten + '-';
-                    await new Promise((r)=>{setTimeout(r, 2000)});
+					new Promise((r)=>{setTimeout(r, 2000)});
                     //onErrorDuration += (performance.now() - onErrorStartTime)/1000;
                     return retriableRequest();
 
                 }else{
                     if (ioo!==0 ){
                         if(debug){console.debug("Destroying ioo...");}
-                        ioo.end();
+                        //ioo.end();
                         //ffmpeg.kill('SIGKILL');
                         //ioo.destroy();
-                        //r.destroy();
+                        ffmpeg.kill('SIGKILL');
+                        r.destroy();
                     }
                     //
                     if(debug){console.debug("Resolving...");}
