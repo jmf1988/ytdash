@@ -68,7 +68,7 @@ let     ffmuxinargs,
         next=0,
         maxWidth = 2080,
         maxFps = 60,
-        maxHeight = 1080;
+        maxHeight = 720;
 
 for (let videoProperty of ['-mh', '-mw', '-mf']){
     if(args.includes(videoProperty)){
@@ -445,7 +445,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                     if (httpRetries>0) {
                             httpRetries--;
                             console.info("Retrying, remaining tries: " + httpRetries);
-							await new Promise((r)=>{setTimeout(r, retrySecs)});
+							await new Promise((r)=>{setTimeout(r, retrySecs*1000)});
                             retriableRequest();
                     } else{
                         //if(debug){console.debug('HTTP error ' + res.statusCode)};
@@ -461,7 +461,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                 }*/
             });
             //r.on('socket', so=>{console.log('socket'+so)});
-            r.on('error', function(err) {
+            r.on('error', async function(err) {
                 hadError = true;
                 if ( err.message !== 'Next item requested.'){
                     console.info("Got error: " + err.message);
@@ -489,7 +489,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                     //ioo.end();
                     console.info("Trying to resume stream from byte=" + bytesWritten);
                     options.headers['Range'] = 'bytes=' + bytesWritten + '-';
-					new Promise((r)=>{setTimeout(r, 2000)});
+					await new Promise((r)=>{setTimeout(r, retrySecs*1000)});
                     //onErrorDuration += (performance.now() - onErrorStartTime)/1000;
                     return retriableRequest();
 
