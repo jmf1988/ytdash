@@ -1053,7 +1053,7 @@ async function apiSearch(query){
     apiParameters['type'] = 'video'
     apiParameters['order'] = 'relevance'
     apiParameters['videoDimension'] = '2d'
-    apiParameters['regionCode'] = 'AR'
+    //apiParameters['regionCode'] = 'AR'
     apiParameters['safeSearch'] = 'none'
     apiParameters['videoDuration'] = 'any'
     apiParameters['videoType'] = 'any'
