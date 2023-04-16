@@ -22,6 +22,9 @@ const http = require('https'),
       orderType = args.slice(args.indexOf('-order'))[1],
       videoCodecsPriorities = args.slice(args.indexOf('-vc'))[1]||'vp9,avc1,av01',
       audioCodecsPriorities = args.slice(args.indexOf('-ac'))[1]||'opus,mp4a',
+      maxWidth = Number(args.slice(args.indexOf('-mw'))[1])||4096,
+      maxFps = Number(args.slice(args.indexOf('-mf'))[1])||60,
+      maxHeight = Number(args.slice(args.indexOf('-mh'))[1])||720,
       cacheDir = process.env.HOME + '/.cache/ytdashjs',
       configDir = process.env.HOME + '/.config/ytdashjs'
       ;
@@ -86,21 +89,8 @@ let     ffmuxinargs,
         ffmuxoutargs,
         urlPassthrough=1,
         ffmuxargs,
-        next=0,
-        maxWidth = 2080,
-        maxFps = 60,
-        maxHeight = 720;
+        next=0;
 
-for (let videoProperty of ['-mh', '-mw', '-mf']){
-    if(args.includes(videoProperty)){
-        let optionValue = args.slice(args.indexOf(videoProperty))[1];
-        if (optionValue > 0) {
-            if (videoProperty === '-mh') {maxHeight = optionValue;}
-            if (videoProperty === '-mw') {maxWidth = optionValue;}
-            if (videoProperty === '-mf') {maxFps = optionValue;}
-        }
-    }
-}
 //var httpRetries = 8;
 // ffmpeg muxer:
 ffmuxinargs = ' -thread_queue_size 100512 -flags +low_delay -i ';
@@ -296,7 +286,7 @@ async function getMetadata(url, headers={}) {
     return mediaMetadata;
 }
 
-async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntryId, mpv) {
+async function request(url, type='GET', headers={}, ffmpeg, fd, playlistEntryId) {
     if(debug){console.debug("REQUEST TYPE: " + type);}
     url = new URL(url);
     headers.Accept = '*/*';
@@ -305,12 +295,12 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
     //headers['Range'] = 'bytes=0-1024000';
     //headers['Accept-Encoding'] = 'gzip';
     headers['Access-Control-Expose-Headers'] = 'Content-Length';
-    var httpRetries = 5;
-    var retrySecs = 5,
+    let httpRetries = 5,
+        retrySecs = 5,
         bytesWritten = 0,
         body = '',
-        newURL = '';
-    let options = { host: url.host,
+        newURL = '',
+        options = { host: url.host,
                 port: 443,
                 path: url.pathname + url.search,
                 headers: headers,
@@ -344,7 +334,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                     options.path = url.pathname + url.search;
                     return retriableRequest();
                     //return request(res.headers.location, type='GET',
-                    //        headers, ioo, 1);
+                    //        headers, ffmpeg.stdio[fd], 1);
                 } else if (statcode === 200||statcode === 204||statcode === 206){
                     // data no se llama with a HEAD request:
                     /*res.on('readable', () => {
@@ -354,19 +344,19 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                             //console.log(`Received ${chunk.length} bytes of data.`);
                             if (type==='GET'){
                                 //body.push(chunk);
-                                if (ioo){
-                                    //ioo.cork();
+                                if (ffmpeg.stdio[fd]){
+                                    //ffmpeg.stdio[fd].cork();
                                     if (httpRetries){
                                             if(next !== playlistEntryId){
-                                                //ioo.cork();
-                                                canWrite = !ioo.write(chunk);
-                                                //ioo.uncork();
+                                                //ffmpeg.stdio[fd].cork();
+                                                canWrite = !ffmpeg.stdio[fd].write(chunk);
+                                                //ffmpeg.stdio[fd].uncork();
                                             } else{
                                                 //res.pause();
-                                                //ioo.uncork();
+                                                //ffmpeg.stdio[fd].uncork();
                                                 r.end();
-                                                ioo.end();
-                                                //ioo.uncork();
+                                                ffmpeg.stdio[fd].end();
+                                                //ffmpeg.stdio[fd].uncork();
                                                 //r.emit('end', '');
                                                 ffmpeg.kill('SIGKILL');
                                                 res.destroy(new Error('Next item requested '));
@@ -375,7 +365,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                                             }
                                         } else{
                                             console.log('Http error on the other media content, cancelling ');
-                                            ioo.end();
+                                            ffmpeg.stdio[fd].end();
                                             r.end();
                                             res.destroy(new Error('Http error on the other media content, cancelling '));
                                             //r.destroy(new Error('Http error on the other media content, cancelling '));
@@ -400,24 +390,24 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                         //console.log(`Received ${chunk.length} bytes of data.`);
                         //console.log(`Total bytes written:  ${bytesWritten}`);
                         if (type==='GET'){
-                            if (ioo){
+                            if (ffmpeg){
                                 if (httpRetries){
                                     //if((!next && live) || (!live && next!==playlistEntryId)){
                                     if(!next){
-                                        canWrite = !ioo.write(chunk);
-                                        //ioo.cork();
-                                        //ioo.uncork();
+                                        canWrite = !ffmpeg.stdio[fd].write(chunk);
+                                        //ffmpeg.stdio[fd].cork();
+                                        //ffmpeg.stdio[fd].uncork();
                                     } else{
                                         if(debug){
                                             console.debug("Stopping Playlist Entry Id: " +
                                                           playlistEntryId);
                                         }
                                         await res.pause();
-                                        //ioo.uncork();
+                                        //ffmpeg.stdio[fd].uncork();
 
                                         //mpv.send({'command':['playlist-remove', playlistEntryId]})
                                         //mpv.send({'command':['playlist-remove', 'current']})
-                                        await ioo.end();
+                                        await ffmpeg.stdio[fd].end();
                                         await ffmpeg.kill('SIGKILL');
                                         await res.destroy(new Error('Next item requested.'));
                                         r.destroy( new Error('Next item requested '));
@@ -443,8 +433,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                         if(debug){console.debug("==>>> RUNNiNG REQUEST END EVENT ");}
                         // Close fds or ffmpeg don't close:
                         if(type==='GET'){
-                            if (ioo!==0 ){ioo.end();
-                                }
+                            if (ffmpeg){ffmpeg.stdio[fd].end();}
                             if (next){
                                 if(debug){console.debug('Next item requested. ');}
                                 //res.destroy();
@@ -507,7 +496,8 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                 }*/
                 // if retriable error:
                 if (err.code === 'ENETUNREACH' || err.code === 'EAI_AGAIN' || err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT' ){
-                    //ioo.end();
+                    //ffmpeg.stdio[fd].end();
+                    if(!ffmpeg && type==='GET' ){body = '';}
                     console.info("Trying to resume stream from byte=" + bytesWritten);
                     options.headers['Range'] = 'bytes=' + bytesWritten + '-';
                     await new Promise((r)=>{setTimeout(r, retrySecs*1000)});
@@ -515,15 +505,13 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                     return retriableRequest();
 
                 }else{
-                    if (ioo!==0 ){
-                        if(debug){console.debug("Destroying ioo...");}
-                        //ioo.end();
-                        //ffmpeg.kill('SIGKILL');
-                        //ioo.destroy();
+                    if (ffmpeg){
+                        if(debug){console.debug("Destroying ffmpeg...");}
+                        //ffmpeg.stdio[fd].end();
+                        //ffmpeg.stdio[fd].destroy();
                         ffmpeg.kill('SIGKILL');
                         r.destroy();
                     }
-                    //
                     if(debug){console.debug("Resolving...");}
                     resolve([0,0,0,0,0]);
                     if(debug){console.debug("Resolved...");}
@@ -541,7 +529,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
     return Ans;
 }
 
-function segmentCreator(sq, murls, fd, mpv, isLive, playlistEntryId){
+function segmentCreator(murls, fd, mpv, isLive, playlistEntryId){
     let ffmpeg;
     let audioRequest,beforeRequest,requestsLapse,
         videoRequest;
@@ -561,8 +549,8 @@ function segmentCreator(sq, murls, fd, mpv, isLive, playlistEntryId){
             //httpRetries=5;
             //beforeRequest = performance.now();
             try {
-                audioRequest=request(murls[0],'GET',{},ffmpeg.stdio[3],ffmpeg,playlistEntryId, mpv);
-                videoRequest=request(murls[1],'GET',{},ffmpeg.stdio[4],ffmpeg,playlistEntryId, mpv);
+                audioRequest=request(murls[0],'GET',{},ffmpeg,3,playlistEntryId);
+                videoRequest=request(murls[1],'GET',{},ffmpeg,4,playlistEntryId);
             } catch (error) {
                 console.info('Error on Media requests: ' + error)
             }
@@ -644,10 +632,9 @@ function segmentCreator(sq, murls, fd, mpv, isLive, playlistEntryId){
 }
 
 
-async function openURL(url,fd, mpv){
-        let sq,
+async function openURL(url,fd, mpv, sq){
         //metadata={},
-        segmentDurationSecs,
+        let segmentDurationSecs,
         segmentsDurationsSecs = [],
         segmentsDurationsSecsAvg,
         videoId,
@@ -781,10 +768,10 @@ async function openURL(url,fd, mpv){
         // Get Live HEADers metadata:
         let headRes = await request(aurl, 'HEAD');
         let headSeqNum = headRes[0]['x-head-seqnum'] - 3;
-        sq = headSeqNum;
+        if(!sq){ sq = headSeqNum;}
         if (metadata[videoId].isPostLiveDvr){
             let backbufferTotalSeqNum = (12*60*60)/segmentDurationSecs;
-            sq = Math.max(0, headSeqNum - backbufferTotalSeqNum);
+            if(!sq){ sq = Math.max(0, headSeqNum - backbufferTotalSeqNum);}
         }
         //metadata[videoId]['x-head-time-sec'] = headRes[0]['x-head-time-sec'];
         saurl = aurl + manifestSequencePath + sq;
@@ -860,8 +847,10 @@ async function openURL(url,fd, mpv){
             mpv.send({ command: [ 'playlist-play-index', next ] })
         }*/
     }
-    child_process.execFile('notify-send', ['Ytdash: ' + metadata[videoId].title,
-                                           metadata[videoId].author]);
+    if (!fullscreen){
+        child_process.execFile('notify-send', ['Ytdash: ' + metadata[videoId].title,
+                                           metadata[videoId].author, '-t', 3000]);
+    }
     if(debug){console.debug("AURL: " + saurl);}
     if(debug){console.debug("VURL: " + svurl);}
     //client.write('{ "command": ["drop-buffers"] }\n');
@@ -876,6 +865,7 @@ async function openURL(url,fd, mpv){
         ipcCommand = { "command": ["set",  "force-media-title", mpvTitle]};
         if(debug){console.debug(ipcCommand);}
         mpv.send(ipcCommand);
+        mpv.send({ "command": ["show-text", mpvTitle, 4000]});
     }else {
         if (metadata[videoId].isLive){
             console.warn('This is a live stream but non-live mode enabled, skipping...');
@@ -893,13 +883,25 @@ async function openURL(url,fd, mpv){
     murls = [saurl, svurl];
     //if(next){mpv.send({ command: [ 'playlist-next'] })}
     next=false;
-    let audioResults,videoResults,startMiliSecsTime,segmenterDurationSecs,
+    let timeUrlOpen,audioResults,videoResults,startMiliSecsTime,segmenterDurationSecs,
         requestDurationSecs,goUp=false,goDown=false,bandEstAvg,bandEstAvgs=[];
     // Main loop:
-    while(resp = await segmentCreator(sq, murls, fd, mpv, metadata[videoId].isLive, playlistEntryId)){
+    while(resp = await segmentCreator(murls, fd, mpv, metadata[videoId].isLive, playlistEntryId)){
         if(debug){console.debug('NEXT ITEM REQUESTED?: ' + next);}
         videoResults = await resp[1];
         headers = await videoResults[0];
+        timeUrlOpen = (new Date() - metadata[videoId].dateTime)/1000;
+        if(debug){
+            console.debug('URL Expire in Seconds: ' + metadata[videoId].expiresInSeconds);
+            console.debug('URL Open Time: ' + timeUrlOpen);
+        }
+        // Refresh stream metadata after 6hrs URLs lifetime - 1hr:
+        if ( timeUrlOpen >= metadata[videoId].expiresInSeconds - 3600){
+            if(debug){console.debug('URLS Expired. Refreshing.' );}
+            console.debug('URLs Expired. Refreshing stream metadata...')
+            metadata[videoId] = 0;
+            return openURL(url,fd, mpv, sq + 1);
+        }
         if (next) {
             if(debug){console.debug('NEXT ITEM REQUESTED!!!!' + next);}
             /*await resp[1];
@@ -919,8 +921,10 @@ async function openURL(url,fd, mpv){
         }
         if (!headers){
             let errorMsg = 'Unable to stream media content, giving up.'
-            child_process.execFile('notify-send', ['YTdash: ' +
-                                           metadata[videoId].title, errorMsg])
+            if(!fullscreen){
+                child_process.execFile('notify-send', ['YTdash: ' +
+                                           metadata[videoId].title, errorMsg, '-t', 3000])
+            }
             console.info(errorMsg);
             //mpv.send({ "command": ["playlist-next"] });
             return 1;
@@ -1049,7 +1053,7 @@ async function apiSearch(query){
     apiParameters['type'] = 'video'
     apiParameters['order'] = 'relevance'
     apiParameters['videoDimension'] = '2d'
-    //apipar['regionCode'] = 'AR'
+    apiParameters['regionCode'] = 'AR'
     apiParameters['safeSearch'] = 'none'
     apiParameters['videoDuration'] = 'any'
     apiParameters['videoType'] = 'any'
