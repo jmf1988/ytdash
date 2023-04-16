@@ -20,6 +20,8 @@ const http = require('https'),
       help = args.includes('-help')||args.includes('-h'),
       order = args.includes('-order'),
       orderType = args.slice(args.indexOf('-order'))[1],
+      videoCodecsPriorities = args.slice(args.indexOf('-vc'))[1]||'vp9,avc1,av01',
+      audioCodecsPriorities = args.slice(args.indexOf('-ac'))[1]||'opus,mp4a',
       cacheDir = process.env.HOME + '/.cache/ytdashjs',
       configDir = process.env.HOME + '/.config/ytdashjs'
       ;
@@ -40,25 +42,44 @@ const metaPostHeaders = {
            };
 
 if (help){
-	console.info('Usage: ytdash [(URLs|Video Ids)|-s search term] [Options]');
-	console.info('	-s [term]		Search mode, uses Youtube Api to search for videos');
-	console.info('	-order			Sort search results found by this order.');
-	console.info('	-n 			Enable streaming of non-live videos found. (Partial support)');
-	console.info('	-mh [number]		Maximum video height allowed.');
-	console.info('	-mw [number]		Maximum video width allowed.');
-	console.info('	-mf [number]		Maximum video fps allowed.');
-	console.info('	-f, -fixed		Don\'t switch video qualities in live streams.');
-	console.info('	-fullscreen, -F 	Start Mpv player playback fullscreen.');
-	console.info('	-e, -extra		Show more information about each video properties.');
-	console.info('	-debug			Show debugging console output.');
-	process.exit();
+    console.info('Usage: ytdash [(URLs|Video Ids)|-s search term] [Options]');
+    console.info('  -s [term]           Search mode, uses Youtube Api to search for videos');
+    console.info('  -order [date,rating,...]   Sort search results found by this order.');
+    console.info('  -n                  Enable streaming of non-live videos found. (Partial support)');
+    console.info('  -mh [number]        Maximum video height allowed.');
+    console.info('  -mw [number]        Maximum video width allowed.');
+    console.info('  -mf [number]        Maximum video fps allowed.');
+    console.info('  -f, -fixed          Don\'t switch video qualities in live streams.');
+    console.info('  -fullscreen, -F     Start Mpv player playback fullscreen.');
+    console.info('  -e, -extra          Show more information about each video properties.');
+    console.info('  -vc [vp9,avc1,av01] Video codecs priorities for non-live streams, comma separated.');
+    console.info('  -ac [opus,mp4a]     Audio codecs priorities for non-live streams, comma separated.');
+    console.info('  -debug              Show debugging console output.');
+    process.exit();
 }
 if (order) {
-	let choices=['relevance', 'viewCount', 'videoCount', 'date', 'rating', 'title'];
-	if (!choices.includes(orderType)){
-		console.info('Invalid order type input. Choices are: %s', choices);
-		process.exit();
-	}
+    let choices=['relevance', 'viewCount', 'videoCount', 'date', 'rating', 'title'];
+    if (!choices.includes(orderType)){
+        console.info('Invalid order type input. Choices are: %s', choices);
+        process.exit();
+    }
+}
+let videoCodecsPrio, audioCodecsPrio;
+if (videoCodecsPriorities) {
+    videoCodecsPrio = videoCodecsPriorities.split(',');
+    let choices=['vp9', 'avc1', 'av01'];
+    if (!videoCodecsPrio.every(codec=>choices.includes(codec))){
+        console.info('Invalid video codecs input. Options separated by commas are: %s ', choices);
+        process.exit();
+    }
+}
+if (audioCodecsPriorities) {
+    audioCodecsPrio = audioCodecsPriorities.split(',');
+    let choices=['opus', 'mp4a'];
+    if (!audioCodecsPrio.every(codec=>choices.includes(codec))){
+        console.info('Invalid audio codecs input. Options separated by commas are: %s ', choices);
+        process.exit();
+    }
 }
 // Variables:
 let     ffmuxinargs,
@@ -84,7 +105,7 @@ for (let videoProperty of ['-mh', '-mw', '-mf']){
 // ffmpeg muxer:
 ffmuxinargs = ' -thread_queue_size 100512 -flags +low_delay -i ';
 ffmuxoutargs = ' -c copy -copyts -flags +low_delay -f mpegts ';
-ffmuxargs = '-v warning -nostdin -xerror' +
+ffmuxargs = '-v fatal -nostdin -xerror' +
             ffmuxinargs + 'async:pipe:3' +
             ffmuxinargs + 'async:pipe:4' +
             ffmuxoutargs + 'pipe:1';
@@ -170,7 +191,7 @@ async function getMetadata(url, headers={}) {
     mediaMetadata.author = videoDetails.author.replace(/,/g,';');
     latencyClass = videoDetails.latencyClass;
     if (!videoDetails.isLive) {
-        console.warn('Non-live videos have slow download because of Youtube rules so video bandwidth adaptive mode is disabled.');
+        console.warn('By Youtube rules, non-live videos have slow external download, bandwidth adaptive mode is disabled.');
     }
     console.info("Status: %o", playabilityStatus.status);
     console.info('Title: %o', videoDetails.title);
@@ -222,12 +243,12 @@ async function getMetadata(url, headers={}) {
             if (format.height > maxHeight) continue;
             if (format.fps > maxFps) continue;
             // Filter prefering video properties over codec type:
-            if(format.width < maxWidthFound) continue;
+            /*if(format.width < maxWidthFound) continue;
             if(format.height < maxHeightFound) continue;
             if(format.fps < maxFpsFound) continue;
             maxWidthFound = format.width;
             maxHeightFound = format.height;
-            maxFpsFound = format.fps;
+            maxFpsFound = format.fps;*/
             let mimeType = format.mimeType.split('; ');
             let typeContainer = mimeType[0].split('/');
             let codecs = mimeType[1].split('=')[1];
@@ -327,51 +348,51 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                 } else if (statcode === 200||statcode === 204||statcode === 206){
                     // data no se llama with a HEAD request:
                     /*res.on('readable', () => {
-						let chunk;
-						let canWrite;
-						while (null !== (chunk = res.read(10240))) {
-							//console.log(`Received ${chunk.length} bytes of data.`);
-							if (type==='GET'){
-								//body.push(chunk);
-								if (ioo){
-									//ioo.cork();
-									if (httpRetries){
-											if(next !== playlistEntryId){
-												//ioo.cork();
-												canWrite = !ioo.write(chunk);
-												//ioo.uncork();
-											} else{
-												//res.pause();
-												//ioo.uncork();
-												r.end();
-												ioo.end();
-												//ioo.uncork();
-												//r.emit('end', '');
-												ffmpeg.kill('SIGKILL');
-												res.destroy(new Error('Next item requested '));
-												//res.destroySoon()
-												//r.destroy( new Error('Next item requested '));
-											}
-										} else{
-											console.log('Http error on the other media content, cancelling ');
-											ioo.end();
-											r.end();
-											res.destroy(new Error('Http error on the other media content, cancelling '));
-											//r.destroy(new Error('Http error on the other media content, cancelling '));
-											//res.emit('end', null);
-											//return
+                        let chunk;
+                        let canWrite;
+                        while (null !== (chunk = res.read(10240))) {
+                            //console.log(`Received ${chunk.length} bytes of data.`);
+                            if (type==='GET'){
+                                //body.push(chunk);
+                                if (ioo){
+                                    //ioo.cork();
+                                    if (httpRetries){
+                                            if(next !== playlistEntryId){
+                                                //ioo.cork();
+                                                canWrite = !ioo.write(chunk);
+                                                //ioo.uncork();
+                                            } else{
+                                                //res.pause();
+                                                //ioo.uncork();
+                                                r.end();
+                                                ioo.end();
+                                                //ioo.uncork();
+                                                //r.emit('end', '');
+                                                ffmpeg.kill('SIGKILL');
+                                                res.destroy(new Error('Next item requested '));
+                                                //res.destroySoon()
+                                                //r.destroy( new Error('Next item requested '));
+                                            }
+                                        } else{
+                                            console.log('Http error on the other media content, cancelling ');
+                                            ioo.end();
+                                            r.end();
+                                            res.destroy(new Error('Http error on the other media content, cancelling '));
+                                            //r.destroy(new Error('Http error on the other media content, cancelling '));
+                                            //res.emit('end', null);
+                                            //return
 
-										}
-									//  }
-								} else {
-									// For getting Manifest URL:
-									body.push(chunk);
-								}
-							} else{
-								// For POST requests:
-								body+=chunk;
-							}
-						}
+                                        }
+                                    //  }
+                                } else {
+                                    // For getting Manifest URL:
+                                    body.push(chunk);
+                                }
+                            } else{
+                                // For POST requests:
+                                body+=chunk;
+                            }
+                        }
                     });*/
                     res.on("data", async function(chunk) {
                         bytesWritten += chunk.length;
@@ -381,32 +402,32 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                         if (type==='GET'){
                             if (ioo){
                                 if (httpRetries){
-									//if((!next && live) || (!live && next!==playlistEntryId)){
-									if(!next){
-										canWrite = !ioo.write(chunk);
-										//ioo.cork();
-										//ioo.uncork();
-									} else{
-										if(debug){
-											console.debug("Stopping Playlist Entry Id: " +
-											              playlistEntryId);
-										}
-										await res.pause();
-										//ioo.uncork();
-										
-										//mpv.send({'command':['playlist-remove', playlistEntryId]})
-										//mpv.send({'command':['playlist-remove', 'current']})
-										await ioo.end();
-										await ffmpeg.kill('SIGKILL');
-										await res.destroy(new Error('Next item requested.'));
-										r.destroy( new Error('Next item requested '));
-									}
-								} else{
-									res.destroy(new Error('Http error in the other request...'));
-									ffmpeg.kill('SIGKILL');
-									//r.destroy(new Error('Http error on the other media content, cancelling '));
+                                    //if((!next && live) || (!live && next!==playlistEntryId)){
+                                    if(!next){
+                                        canWrite = !ioo.write(chunk);
+                                        //ioo.cork();
+                                        //ioo.uncork();
+                                    } else{
+                                        if(debug){
+                                            console.debug("Stopping Playlist Entry Id: " +
+                                                          playlistEntryId);
+                                        }
+                                        await res.pause();
+                                        //ioo.uncork();
 
-								}
+                                        //mpv.send({'command':['playlist-remove', playlistEntryId]})
+                                        //mpv.send({'command':['playlist-remove', 'current']})
+                                        await ioo.end();
+                                        await ffmpeg.kill('SIGKILL');
+                                        await res.destroy(new Error('Next item requested.'));
+                                        r.destroy( new Error('Next item requested '));
+                                    }
+                                } else{
+                                    res.destroy(new Error('Http error in the other request...'));
+                                    ffmpeg.kill('SIGKILL');
+                                    //r.destroy(new Error('Http error on the other media content, cancelling '));
+
+                                }
                                 //  }
                             } else {
                                 // For getting Manifest URL:
@@ -423,7 +444,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                         // Close fds or ffmpeg don't close:
                         if(type==='GET'){
                             if (ioo!==0 ){ioo.end();
-								}
+                                }
                             if (next){
                                 if(debug){console.debug('Next item requested. ');}
                                 //res.destroy();
@@ -445,7 +466,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                     if (httpRetries>0) {
                             httpRetries--;
                             console.info("Retrying, remaining tries: " + httpRetries);
-							await new Promise((r)=>{setTimeout(r, retrySecs*1000)});
+                            await new Promise((r)=>{setTimeout(r, retrySecs*1000)});
                             retriableRequest();
                     } else{
                         //if(debug){console.debug('HTTP error ' + res.statusCode)};
@@ -489,7 +510,7 @@ async function request(url, type='GET', headers={}, ioo=0, ffmpeg, playlistEntry
                     //ioo.end();
                     console.info("Trying to resume stream from byte=" + bytesWritten);
                     options.headers['Range'] = 'bytes=' + bytesWritten + '-';
-					await new Promise((r)=>{setTimeout(r, retrySecs*1000)});
+                    await new Promise((r)=>{setTimeout(r, retrySecs*1000)});
                     //onErrorDuration += (performance.now() - onErrorStartTime)/1000;
                     return retriableRequest();
 
@@ -706,9 +727,9 @@ async function openURL(url,fd, mpv){
             //urls = urls.filter(item=>item!==videoId);
             console.info('Skipping Video Id: %s.', videoId);
             //mpv.send({ command: [ 'playlist-next'] })
-            if (args.includes('-n')){
+            /*if (args.includes('-n')){
                 //mpv.send({ "command": ["playlist-remove", playlistEntryId - 1 ] });
-            }
+            }*/
             //next=false;
             return 1;
     } else{
@@ -736,10 +757,10 @@ async function openURL(url,fd, mpv){
     if (metadata[videoId].isLive || metadata[videoId].isPostLiveDvr){
         aid = audioMetadata.length - 1;
         if (fixed){
-			vid = videoMetadata.length - 1;
-		}else{
-			vid = Math.min(videoMetadata.length - 1, 3);
-		}
+            vid = videoMetadata.length - 1;
+        }else{
+            vid = Math.min(videoMetadata.length - 1, 3);
+        }
         ffmuxargs = ffmuxargs.replace('-f nut','-f mpegts');
         aurl = audioMetadata[aid].BaseURL;
         vurl = videoMetadata[vid].BaseURL;
@@ -771,17 +792,15 @@ async function openURL(url,fd, mpv){
     }else{
         // console.dir(metadata[videoId])
         if(!args.includes('-n')){
-            console.info('This item is not a live stream, ' + 
+            console.info('This item is not a live stream, ' +
                          'pass -n option to play non-live ' +
                          'videos (Partial support).')
             return 0
         }
         let prefAudioFormat,prefVideoFormat,prefAudioCodecs,prefVideoCodecs,audioFormat, videoFormat;
         ffmuxargs = ffmuxargs.replace('-f mpegts','-f nut');
-		prefAudioCodecs = ['opus', 'mp4a'];
-        prefVideoCodecs = ['vp9', 'avc1','av01'];
         // Select audio and video media url sources:
-        for (let pacodec of prefAudioCodecs){
+        for (let pacodec of audioCodecsPrio){
             for (let audioFormat in audioMetadata){
                 for (let audioCodec in audioMetadata[audioFormat]){
                     if (audioCodec === pacodec){
@@ -793,11 +812,11 @@ async function openURL(url,fd, mpv){
             }
             if (acodec){break;}
         }
-        for (let pvcodec of prefVideoCodecs){
-            for (let videoFormat in await videoMetadata){
-                for (let videoCodec in videoMetadata[videoFormat]){
+        for (let pvcodec of videoCodecsPrio){
+            for (let videoContainer in await videoMetadata){
+                for (let videoCodec in videoMetadata[videoContainer]){
                     if (videoCodec === pvcodec){
-                        vcodec = videoMetadata[videoFormat][videoCodec];
+                        vcodec = videoMetadata[videoContainer][videoCodec];
                         break;
                     }
                 }
@@ -805,10 +824,20 @@ async function openURL(url,fd, mpv){
             }
             if (vcodec){break;}
         }
+        if (!vcodec){
+            console.warn('===>>> No video codec found. (requested %s)', videoCodecsPrio);
+            metadata[videoId]=1;
+            return 1;
+        }
+        if (!acodec){
+            console.warn('===>>> No audio codec found. (requested %s)', audioCodecsPrio);
+            metadata[videoId]=1;
+            return 1;
+        }
         aid = acodec.length - 1; // Defaulting to highest audio quality by sort.order:
         //if(vcodec.length < vid + 1){ vid = vcodec.length - 1; }; // Pick highest available-
+        //console.dir(metadata[videoId].video);
         vid = vcodec.length - 1;// Defaulting to highest video quality
-        //console.dir(metadata[videoId].video.mp4);
         if (await vcodec.every(elem=>elem.signatureCipher)){
             //vcodec[0].signatureCipher
             console.warn('===>>> Ciphered videos are not supported.');
@@ -842,19 +871,22 @@ async function openURL(url,fd, mpv){
     }*/
     //console.debug(ipcString);
     let loadfileMode, ipcCommand;
-	let mpvTitle = `${metadata[videoId].title.replace(':',';') + ' - ' + metadata[videoId].author}`;
-	if (live){
+    let mpvTitle = `${metadata[videoId].title.replace(':',';') + ' - ' + metadata[videoId].author}`;
+    if (live){
         ipcCommand = { "command": ["set",  "force-media-title", mpvTitle]};
         if(debug){console.debug(ipcCommand);}
         mpv.send(ipcCommand);
     }else {
-		//ipcCommand = ;
-		if (urlPassthrough){
-			mpv.send({ "command": ["loadfile", `${svurl}`, 'append-play',
-			    				   "audio-file=" + `${saurl}`+",force-media-title=" + mpvTitle ]});
-			return 2;
-		}
-	}
+        if (metadata[videoId].isLive){
+            console.warn('This is a live stream but non-live mode enabled, skipping...');
+            return 1;
+        }
+        if (urlPassthrough){
+            mpv.send({ "command": ["loadfile", `${svurl}`, 'append-play',
+                                   "audio-file=" + `${saurl}`+",force-media-title=" + mpvTitle ]});
+            return 2;
+        }
+    }
     //console.log(ipcCommand);
     //mpv.send({ command: [ 'playlist-play-index', next - 1 ] })
     videoQualitiesQuantity = metadata[videoId].video.length;
@@ -872,14 +904,14 @@ async function openURL(url,fd, mpv){
             if(debug){console.debug('NEXT ITEM REQUESTED!!!!' + next);}
             /*await resp[1];
             await resp[0];
-			next=false;*/
-			next=false;
+            next=false;*/
+            next=false;
             if (metadata[videoId].isLive){
                 //mpv.send({ command: [ 'playlist-next'] });
                 //mpv.send({ command: [ 'playlist-play-index', 'current' ] })
             } else{
-				await resp[1];
-				await resp[0];
+                await resp[1];
+                await resp[0];
                 //mpv.send({ command: [ 'playlist-play-index', next] })
             }
             return 2;
@@ -1099,8 +1131,8 @@ async function  main() {
                        e!=='-mf' && (e.startsWith('http') ||
                        e.length === 11 ) && e!=='-F' && e!=='-fixed' &&
                        e!=='-fullscreen' && e!=='-e' && e!=='-extra' &&
-                       e!=='-h' && e!=='-help' && e!=='-order' && 
-                       e!==orderType);
+                       e!=='-h' && e!=='-help' && e!=='-order' &&  e!=='-vc' &&
+                       e!==orderType &&  e!=='-ac');
     if (args.includes('-s')){
         parameter = args.slice(args.indexOf('-s'))[1];
         if (parameter){
@@ -1173,7 +1205,7 @@ async function  main() {
     //mpv.send({ "command": ["observe_property", 1, "playlist-next"] });
     if(live){
         mpv.send({ "command": ["loadfile", "fd://4", 'append-play']});
-		mpv.send({ "command": ["set", "loop-playlist", "inf"]});
+        mpv.send({ "command": ["set", "loop-playlist", "inf"]});
     }
     let result,
         results=[],
@@ -1186,13 +1218,13 @@ async function  main() {
             fd++;
             eid++;
             if(eid > urls.length - 1){
-				/*eid=0;
-				fd=4;
+                /*eid=0;
+                fd=4;
                 for (let result of results){
-					if (result !== 1){
-						mpv.send({ "command": ["loadfile", "fd://" + fd, 'append-play'] });
-						fd++
-					}
+                    if (result !== 1){
+                        mpv.send({ "command": ["loadfile", "fd://" + fd, 'append-play'] });
+                        fd++
+                    }
                 }*/
                 break;
             }
@@ -1210,7 +1242,10 @@ async function  main() {
             if(urls.length < eid + 1){eid=0;}
         }
     }
-    console.info('No more videos to play.');
+    if(results.every(result=>result!==2)){
+        console.info('No more videos to play.');
+        mpv.kill();
+    }
 }
 main();
 if(debug){console.debug('OUT');}
