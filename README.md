@@ -2,37 +2,66 @@
 # YTdash
 YTdash is a linux command line tool written in python 3 that allows you to search online and play mainly live videos from Youtube with native performance by using a local player without having to lose bandwidth-adaptative capabilities, which is more important when streaming live content because there is less buffer available to pull from. To do all this, latency improvements are approached with a combination of parallelized https requests, DASH protocol, and keep alive connections, using the more reliable third party programs known in each function needed; the Mpv player for low latency playback and minimal interface, ffmpeg for muxing/demuxing and cURL to download the content.
 
-Required dependencies:
- * Python: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.7), pycurl(>=7.43.0.2)
- * Javascript: nodejs (>=v18.15.0)
+Ytdash Required dependencies:
+ * Python version: mpv (>=0.28 recommended and default), ffmpeg(>=4.0), python3(>=3.7), pycurl(>=7.43.0.2)
+ * Javascript version: nodejs (>=v18.15.0), xml2js >= (0.5.0), ffmpeg(>=4.0), mpv (>=0.35)
+ 
+JAVASCRIPT version dependencies installation:
 
-Python dependencies: pycurl and certifi
-
-Quick installation of dependencies: 
 - Debian based:
-apt-get install python3 python3-pycurl python3-certifi ffmpeg mpv 
+apt-get install nodejs node-xml2js mpv
 
-- Optional dependencies: "fonts-symbola" and "fonts-noto-color-emoji" packages for terminal, player and native notifications titles and descriptions emojis and symbols support and "libnotify-bin" to enable native notifications.
+Extras:
+apt-get install fonts-symbola fonts-noto-color-emoji libnotify-bin
 
-That's all.
+OR
 
-Optional installation of pycurl with openssl backend:
+Download an up to date node from https://nodejs.org/en, install it and then npm install xml2js.
 
-The above installs OS version of pycurl that can be outdated and/or come with gnutls backend enabled by default, depending on the distro used, which may use more memory and cause some issues. To install pycurl with openssl backend that uses less memory and is more realiable using pip tool do the following:
+Download ytdash.js and chmod +x ytdash.js.
+<pre>
+CLI Usage: 
+ytdash.js [(URLs|Video Ids)|-s search term] [Options]
+  -s [term]           Search mode, uses Youtube Api to search for videos
+  -order [date,rating,...]   Sort search results found by this order.
+  -n                  Enable streaming of non-live videos found. (Partial support)
+  -mh [number]        Maximum video height allowed.
+  -mw [number]        Maximum video width allowed.
+  -mf [number]        Maximum video fps allowed.
+  -f, -fixed          Don't switch video qualities in live streams.
+  -fullscreen, -F     Start Mpv player playback fullscreen.
+  -e, -extra          Show more information about each video properties.
+  -vc [vp9,avc1,av01] Video codecs priorities for non-live streams, comma separated.
+  -ac [opus,mp4a]     Audio codecs priorities for non-live streams, comma separated.
+  -debug              Show debugging console output.
+</pre>
 
-- Install the required dependecies in debian/ubuntu to build pycurl with openssl backend instead 
 
-  - apt-get install python3-dev gcc libssl-dev libcurl4-openssl-dev [python3-pip]
+PYTHON version dependencies: pycurl and certifi
 
-- Remove possible already installed packages with other methods:
+  Quick installation of dependencies: 
+  - Debian based:
+  apt-get install python3 python3-pycurl python3-certifi ffmpeg mpv 
 
-  - apt-get remove libcurl4-gnutls-dev && apt-get remove python3-pycurl python3-certifi && pip3 uninstall pycurl certifi
-  
-- Build and install pycurl with openssl backend:
+  - Optional dependencies: "fonts-symbola" and "fonts-noto-color-emoji" packages for terminal, player and native notifications titles and descriptions emojis and symbols support and "libnotify-bin" to enable native notifications.
 
-  - PYCURL_SSL_LIBRARY=openssl pip3 install --no-cache-dir pycurl certifi [--user]
+  Optional installation of pycurl with openssl backend:
 
-Ytdash command line usage: 
+  The above installs OS version of pycurl that can be outdated and/or come with gnutls backend enabled by default, depending on the distro used, which may use more memory and cause some issues. To install pycurl with openssl backend that uses less memory and is more realiable using pip tool do the following:
+
+  - Install the required dependecies in debian/ubuntu to build pycurl with openssl backend instead 
+
+    - apt-get install python3-dev gcc libssl-dev libcurl4-openssl-dev [python3-pip]
+
+  - Remove possible already installed packages with other methods:
+
+    - apt-get remove libcurl4-gnutls-dev && apt-get remove python3-pycurl python3-certifi && pip3 uninstall pycurl certifi
+
+  - Build and install pycurl with openssl backend:
+
+    - PYCURL_SSL_LIBRARY=openssl pip3 install --no-cache-dir pycurl certifi [--user]
+
+Ytdash python command line usage: 
 <pre>
 usage: ytdash [-h] [--version] [-quiet] [-onlyone] [-kill] [-search] [-research] [-nonlive]
               [-sortby {relevance,viewCount,videoCount,date,rating,title,rating}] [-eventtype {live,upcoming,completed}]
