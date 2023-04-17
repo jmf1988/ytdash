@@ -12,21 +12,27 @@ const http = require('https'),
       metadataUrl = 'https://www.youtube.com/youtubei/v1/player?key=' + apiKey,
       args = process.argv.slice(2),
       ffmpegURI = '/usr/bin/ffmpeg',
+      cacheDir = process.env.HOME + '/.cache/ytdashjs',
+      configDir = process.env.HOME + '/.config/ytdashjs',
+      // Flags:
       live = !args.includes('-n'),
       debug = args.includes('-debug'),
       fixed = args.includes('-fixed')||args.includes('-f'),
       fullscreen = args.includes('-fullscreen')||args.includes('-F'),
       extraInfo = args.includes('-e')||args.includes('-extra'),
       help = args.includes('-help')||args.includes('-h'),
+      noDiskCache = args.includes('-nc'),
+      noVolNor = args.includes('-nv'),
       order = args.includes('-order'),
       orderType = args.slice(args.indexOf('-order'))[1],
+      searchMode = args.includes('-s'),
+      searchTerm = args.slice(args.indexOf('-s'))[1],
       videoCodecsPriorities = args.slice(args.indexOf('-vc'))[1]||'vp9,avc1,av01',
       audioCodecsPriorities = args.slice(args.indexOf('-ac'))[1]||'opus,mp4a',
-      maxWidth = Number(args.slice(args.indexOf('-mw'))[1])||4096,
-      maxFps = Number(args.slice(args.indexOf('-mf'))[1])||60,
-      maxHeight = Number(args.slice(args.indexOf('-mh'))[1])||720,
-      cacheDir = process.env.HOME + '/.cache/ytdashjs',
-      configDir = process.env.HOME + '/.config/ytdashjs'
+      maxWidth = Math.round(Number(args.slice(args.indexOf('-mw'))[1]))||4096,
+      maxFps = Math.round(Number(args.slice(args.indexOf('-mf'))[1]))||60,
+      maxHeight = Math.round(Number(args.slice(args.indexOf('-mh'))[1]))||720,
+      maxResults = Math.round(Number(args.slice(args.indexOf('-mr'))[1]))
       ;
 
 const metaPostdata = {"context":
@@ -46,12 +52,14 @@ const metaPostHeaders = {
 
 if (help){
     console.info('Usage: ytdash [(URLs|Video Ids)|-s search term] [Options]');
-    console.info('  -s [term]           Search mode, uses Youtube Api to search for videos');
+    console.info('  -s [term]           Search mode, uses Youtube Api to search for videos.');
+    console.info('  -nc                 Disable cache to disk of results found with search mode.');
     console.info('  -order [date,rating,...]   Sort search results found by this order.');
     console.info('  -n                  Enable streaming of non-live videos found. (Partial support)');
     console.info('  -mh [number]        Maximum video height allowed.');
     console.info('  -mw [number]        Maximum video width allowed.');
     console.info('  -mf [number]        Maximum video fps allowed.');
+    console.info('  -nv                 Disable Mpv player volume normalization.');
     console.info('  -f, -fixed          Don\'t switch video qualities in live streams.');
     console.info('  -fullscreen, -F     Start Mpv player playback fullscreen.');
     console.info('  -e, -extra          Show more information about each video properties.');
@@ -120,7 +128,6 @@ let mpvargs =   '--idle ' +
                   '--video-latency-hacks=yes ' +
                   //'--af=lavfi="[alimiter=limit=0.9:level=enabled]" ' +
                   '--audio-normalize-downmix=yes ' +
-                  '--af=lavfi=[loudnorm=I=-22:TP=-1.5:LRA=2] ' +
                   //'--merge-files ' +
                   '--demuxer-lavf-o-add=fflags=+nobuffer ' +
                   //'--no-correct-pts ' + // a/v desync on seeking
@@ -134,6 +141,7 @@ let mpvargs =   '--idle ' +
                  //' - ' +
                  '--keep-open';
 if (fullscreen){mpvargs += ' --fullscreen'}
+if (!noVolNor){mpvargs += ' --af=lavfi=[loudnorm=I=-22:TP=-1.5:LRA=2]'}
 
 async function getMetadata(url, headers={}) {
     let mediaMetadata = {},
@@ -204,7 +212,7 @@ async function getMetadata(url, headers={}) {
         if(debug){console.debug('DASH Manifest URL:'+ dashManifestURL);}
         // Request manifest compressed 'cause too big:
         dashManifestRawBody = await request(dashManifestURL, 'GET',
-                                         {'Accept-Encoding' : 'gzip'}
+                                         {'Accept-Encoding' : 'gzip'}, 0
                                         );
         parseString(zlib.gunzipSync(
                     dashManifestRawBody[1]),
@@ -1028,24 +1036,10 @@ async function openURL(url,fd, mpv, sq){
 //}
 //main()
 async function apiSearch(query){
-    let parms,items,apiBaseURL,apiParameters,midURL,apiUrlCheckLive,apiType,
+    let items,apiBaseURL,apiParameters = {},midURL,apiUrlCheckLive,apiType,
     urlEnd,apiURL,jsonResponse,videoIds = [], cacheFilename = cacheDir + '/';
-    parms = {
-    'eventType':'completed',
-    'sortBy':'relevance',
-    'safeSearch':'moderate',
-    'type':'video',
-    'videoDuration':'any',
-    'videoType':'any',
-    'videoLicense':'any',
-    'videoDefinition':'any',
-    'maxResults':'5',
-    'videoEmbeddable':'any',
-    'videoSyndicated':'true',
-    'videoDimension':'2d'
-    }
+
     apiBaseURL = 'https://www.googleapis.com/youtube/v3/';
-    apiParameters = {};
     midURL = new URLSearchParams(apiParameters).toString();
     apiUrlCheckLive = apiBaseURL + 'videos?' + midURL;
     apiType = 'search'
@@ -1064,18 +1058,18 @@ async function apiSearch(query){
     apiParameters['videoEmbeddable'] = 'any'
     apiParameters['videoSyndicated'] = 'true'
     if (order){apiParameters['order'] = orderType;}
-    if (!args.includes('-n')){apiParameters['eventType'] = 'live'}
+    if (live){apiParameters['eventType'] = 'live'}
     if (args.includes('-c')){apiParameters['eventType']='completed'}
     if (args.includes('-u')){apiParameters['eventType']='upcoming'}
-    if (args.includes('-mr')){
-        apiParameters['maxResults'] = args.slice(args.indexOf('-mr'))[1];
+    if (maxResults > 0 && maxResults <= 50){
+        apiParameters['maxResults'] = maxResults;
     }
     for (let parameter in apiParameters) {
         cacheFilename += parameter + '=' + apiParameters[parameter] + '+';
     }
     cacheFilename = cacheFilename.slice(0,249);
     cacheFilename += '.cache';
-    if(fs.existsSync(cacheFilename)) {
+    if( !noDiskCache && fs.existsSync(cacheFilename)) {
         let stats,cachedResponse;
         stats = fs.statSync(cacheFilename);
         if (((new Date() - stats.birthtime)/1000)/60 < 24*60 ){
@@ -1117,14 +1111,12 @@ async function apiSearch(query){
     if(debug){console.dir("videoIds" + videoIds);}
     return videoIds;
 }
-//if(debug){console.debug('URLS' + urls);}
+
 let results=[0],
     nextAvailable;
 var metadata={},videoId;
 // MAIN ULTRA_ASYNC_GENERIC_LOOP_2000:
 async function  main() {
-    // let cacheDir = process.env.HOME + '/.cache/ytdashjs';
-    // let configDir = process.env.HOME + '/.config/ytdashjs';
     fs.mkdirSync(cacheDir, {recursive:true})
     fs.mkdirSync(configDir, {recursive:true})
     let mpvStdio = {stdio: ['ignore', process.stdout, process.stderr, 'ipc']},
@@ -1136,11 +1128,13 @@ async function  main() {
                        e.length === 11 ) && e!=='-F' && e!=='-fixed' &&
                        e!=='-fullscreen' && e!=='-e' && e!=='-extra' &&
                        e!=='-h' && e!=='-help' && e!=='-order' &&  e!=='-vc' &&
-                       e!==orderType &&  e!=='-ac');
-    if (args.includes('-s')){
-        parameter = args.slice(args.indexOf('-s'))[1];
-        if (parameter){
-            urls = await apiSearch(parameter);
+                       e!==orderType &&  e!=='-ac' &&  e!=='-nc' &&
+                       e!=='-nv' && e!=maxWidth && e!=maxHeight && e!=maxFps &&
+                       e!=maxResults
+                       );
+    if(searchMode){
+        if (searchTerm){
+            urls = await apiSearch(searchTerm);
             if(debug){console.dir(urls);}
             if (!urls.length){
                 console.info("0 videos found.");
@@ -1150,10 +1144,7 @@ async function  main() {
             console.info('No search string given.');
             process.exit();
         }
-
     }
-
-
     if(debug){console.debug('URLS: %o', urls)}
     /*for (let times=0; times < urls.length;times++){
                 mpvStdio.stdio.push('pipe');
@@ -1171,13 +1162,11 @@ async function  main() {
     const mpv = child_process.spawn('mpv', mpvargs.split(' '),mpvStdio);
     //mpv.stdin._writableState.highWaterMark=1024;
 
-    //mpv.connected
     mpv.on('exit', ()=>{
         console.info('Player closed, exit...');
         process.exit();
     });
 
-    //function setMpvIPC(){
     mpv.on('message', message=>{
         let event, itemEntryId, reason;
         if(debug){console.log(message)}
