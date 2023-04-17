@@ -22,18 +22,21 @@ Download ytdash.js and chmod +x ytdash.js.
 <pre>
 CLI Usage: 
 ytdash.js [(URLs|Video Ids)|-s search term] [Options]
-  -s [term]           Search mode, uses Youtube Api to search for videos
+  -s [term]           Search mode, uses Youtube Api to search for videos.
+  -nc                 Disable cache to disk of results found with search mode.
   -order [date,rating,...]   Sort search results found by this order.
   -n                  Enable streaming of non-live videos found. (Partial support)
   -mh [number]        Maximum video height allowed.
   -mw [number]        Maximum video width allowed.
   -mf [number]        Maximum video fps allowed.
+  -nv                 Disable Mpv player volume normalization.
   -f, -fixed          Don't switch video qualities in live streams.
   -fullscreen, -F     Start Mpv player playback fullscreen.
   -e, -extra          Show more information about each video properties.
   -vc [vp9,avc1,av01] Video codecs priorities for non-live streams, comma separated.
   -ac [opus,mp4a]     Audio codecs priorities for non-live streams, comma separated.
   -debug              Show debugging console output.
+
 </pre>
 
 
