@@ -133,8 +133,8 @@ let mpvargs =   '--idle ' +
                   //'--no-correct-pts ' + // a/v desync on seeking
                   //'--untimed ' +
                   //'--fps=60 ' +
-                  '--demuxer-lavf-probe-info=nostreams ' +
-                  '--demuxer-lavf-analyzeduration=0.1 ' +
+                  //'--demuxer-lavf-probe-info=nostreams ' +
+                  //'--demuxer-lavf-analyzeduration=0.4 ' +
                   //'--framedrop=no ' +
                   '--input-ipc-client=fd://3 ' +
                  //'--really-quiet'+
@@ -143,7 +143,7 @@ let mpvargs =   '--idle ' +
 if (fullscreen){mpvargs += ' --fullscreen'}
 if (!noVolNor){mpvargs += ' --af=lavfi=[loudnorm=I=-22:TP=-1.5:LRA=2]'}
 
-async function getMetadata(url, headers={}) {
+async function getMetadata(url, headers={}, init) {
     let mediaMetadata = {},
         adaptiveMediaFormats = {},
         postRes,
@@ -183,37 +183,27 @@ async function getMetadata(url, headers={}) {
     adaptiveFormats = streamingData.adaptiveFormats;
     //.sort((a,b)=>{return a.height-b.height;});
     // Get and log video Details:
+    mediaMetadata.status = playabilityStatus.status;
     mediaMetadata.isLive = (videoDetails.isLive||false);
     mediaMetadata.isPostLiveDvr = (videoDetails.isPostLiveDvr||false);
     mediaMetadata.title = videoDetails.title.replace(/,/g,';');
     mediaMetadata.author = videoDetails.author.replace(/,/g,';');
-    latencyClass = videoDetails.latencyClass;
+    mediaMetadata.channelId = videoDetails.channelId;
+    mediaMetadata.viewCount = Number(videoDetails.viewCount);
+    mediaMetadata.shortDescription = videoDetails.shortDescription
+    mediaMetadata.latencyClass = videoDetails.latencyClass && videoDetails.latencyClass.slice(42).replace('_',' ');
     if (!videoDetails.isLive) {
         console.warn('By Youtube rules, non-live videos have slow external download, bandwidth adaptive mode is disabled.');
     }
-    console.info("Status: %o", playabilityStatus.status);
-    console.info('Title: %o', videoDetails.title);
-    console.info('Author: %o', videoDetails.author);
-    console.info('Is Live: ', mediaMetadata.isLive);
-    console.info('Is PostLive: ', mediaMetadata.isPostLiveDvr);
-    if (latencyClass) {
-        mediaMetadata.latencyClass = latencyClass.slice(42).replace('_',' ');
-        console.info('Latency Class: %o', mediaMetadata.latencyClass);
-    }
-    console.info('Channel Id: %o', videoDetails.channelId);
-    console.info('Views: ', Number(videoDetails.viewCount));
-    if (extraInfo && videoDetails.shortDescription) {
-        console.info('Short Description:');
-        console.info(videoDetails.shortDescription);
-        //console.dir(console.dir(videoDetails.shortDescription.replace('\n\' \+', '')));
-    }
-    if (videoDetails.isLive || mediaMetadata.isPostLiveDvr){
+    
+    if (mediaMetadata.isLive || mediaMetadata.isPostLiveDvr){
         dashManifestURL = streamingData.dashManifestUrl;
         if(debug){console.debug('DASH Manifest URL:'+ dashManifestURL);}
         // Request manifest compressed 'cause too big:
         dashManifestRawBody = await request(dashManifestURL, 'GET',
                                          {'Accept-Encoding' : 'gzip'}, 0
                                         );
+        if (!dashManifestRawBody[1]){return 1;}
         parseString(zlib.gunzipSync(
                     dashManifestRawBody[1]),
                     function (err, result) {
@@ -462,7 +452,7 @@ async function request(url, type='GET', headers={}, ffmpeg, fd, playlistEntryId)
                 } else {
                     if (httpRetries>0) {
                             httpRetries--;
-                            console.info("Retrying, remaining tries: " + httpRetries);
+                            if(debug){console.debug("Retrying, remaining tries: " + httpRetries);}
                             await new Promise((r)=>{setTimeout(r, retrySecs*1000)});
                             retriableRequest();
                     } else{
@@ -482,7 +472,7 @@ async function request(url, type='GET', headers={}, ffmpeg, fd, playlistEntryId)
             r.on('error', async function(err) {
                 hadError = true;
                 if ( err.message !== 'Next item requested.'){
-                    console.info("Got error: " + err.message);
+                    console.info("Got error on request: " + err.message);
                     if ( err.code ) {
                         console.info("Error code: " + err.code);//if (r.reusedSocket && err.code === 'ECONNRESET') {
                     }
@@ -640,7 +630,7 @@ function segmentCreator(murls, fd, mpv, isLive, playlistEntryId){
 }
 
 
-async function openURL(url,fd, mpv, sq){
+async function openURL(url,fd, mpv, sq, onlyMetadata){
         //metadata={},
         let segmentDurationSecs,
         segmentsDurationsSecs = [],
@@ -691,7 +681,11 @@ async function openURL(url,fd, mpv, sq){
                 //process.exit();
             }
         } else {
-            console.info('VideoId: --->>> %o <<<---', url);
+            if(!onlyMetadata){
+				console.info('VideoId: --->>> %o <<<---', url);
+			} else{
+				console.info('Pre-caching VideoId: --->>> %o <<<---', url);
+			}
             videoId = url;
         }
     }else {
@@ -710,11 +704,11 @@ async function openURL(url,fd, mpv, sq){
     //if(debug){console.debug("MMMMEEETTAADDDDAAATTAEEEEEE!!: " + metadata[videoId])}
     if (!metadata[videoId]){
         metadata[videoId] = await getMetadata(metadataUrl,
-                                              metaPostHeaders);
+                                              metaPostHeaders, onlyMetadata);
         if(debug){console.debug("DATE CREATION ADDED: " );}
         //console.dir(metadata[videoId]);
     } else{
-        console.info("Using cached video details." );
+        console.info("ººº Using cached video details. ººº" );
     }
     // If a video Id gives metadata errors it's skipped next time:
     if (metadata[videoId]===1){
@@ -731,6 +725,39 @@ async function openURL(url,fd, mpv, sq){
         metadata[videoId].dateTime = dateTime;
 
     }
+    // If only metadata requested return with non error code:
+    if (onlyMetadata){
+		return 2;
+	} else{
+		let status = metadata[videoId].status,
+			title = metadata[videoId].title,
+			author = metadata[videoId].author,
+			isLive = metadata[videoId].isLive,
+			isPostLiveDvr = metadata[videoId].isPostLiveDvr,
+			latencyClass = metadata[videoId].latencyClass,
+			channelId = metadata[videoId].channelId,
+			viewCount = metadata[videoId].viewCount,
+			shortDescription = metadata[videoId].shortDescription
+			;
+			
+		// Print Video Details;
+		console.info("Status: %o", status);
+	    console.info('Title: %o', title);
+	    console.info('Author: %o', author);
+	    console.info('Channel Id: %o', channelId);
+	    console.info('Views: ', viewCount);
+	    console.info('Is Live: ', isLive);
+	    console.info('Is PostLive: ', isPostLiveDvr);
+	    if (latencyClass) {
+			console.info('Latency Class: %o', latencyClass);
+	    }
+	    
+	    if (extraInfo && shortDescription) {
+	        console.info('Short Description:');
+	        console.info(shortDescription);
+	        //console.dir(console.dir(videoDetails.shortDescription.replace('\n\' \+', '')));
+	    }	
+	}
     /*if (metadata[videoId]['downloadFinished']){
         console.info('VIDEOID; ' + videoId + 'ALready DOWNLOADED');
         return 3;
@@ -1105,7 +1132,7 @@ async function apiSearch(query){
             fs.writeFileSync(cacheFilename, JSON.stringify(items));
 
         }
-    } else { console.info('Using cached search results.') }
+    } else { console.info('ºº Using cached search results. ºº') }
     console.dir(items);
     items.forEach(item=>videoIds.push(item.id.videoId));
     if(debug){console.dir("videoIds" + videoIds);}
@@ -1203,6 +1230,7 @@ async function  main() {
     let result,
         results=[],
         eid=0,
+        init=1,
         fd=4;
     while(true){
         if(!live){
@@ -1223,16 +1251,24 @@ async function  main() {
             }
             //if (result !==2){break;}
         }else{
-            result = await openURL(urls[eid], fd, mpv);
-            results.splice(eid, 1, result);
+            if (init){
+                //Pre-cache next URL metadata informations:
+                if (urls[eid+1]){
+                    result = openURL(urls[eid + 1], fd, mpv, 0, 1);
+                    results.splice(eid + 1, 1, result);
+                }
+            }
+            if (results[eid]!==1){
+                result = await openURL(urls[eid], fd, mpv, 0, 0);
+                results.splice(eid, 1, result);
+            }
             // if all results are different from '2' (next item requested) quit:
             if (results.length === urls.length && results.every(result=>result!==2)){
                 mpv.kill();
                 break;
             }
-            //fd++;
             eid++;
-            if(urls.length < eid + 1){eid=0;}
+            if(urls.length < eid + 1){eid=0;init=0;}
         }
     }
     if(results.every(result=>result!==2)){
