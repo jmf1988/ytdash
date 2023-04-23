@@ -118,6 +118,8 @@ let mpvargs =   '--idle ' +
                   '--demuxer-max-back-bytes=' + 50 * 1048576 + ' ' +
                   '--cache=yes ' +
                   '--cache-secs=300 ' +
+                  '--osd-playing-msg-duration=4000 ' +
+                  '--osd-align-x=center ' +
                   //'--loop-playlist ' +
                   //'--loop-playlist=force ' +
                   '--prefetch-playlist=yes ' +
@@ -125,11 +127,11 @@ let mpvargs =   '--idle ' +
                   //'--audio-file=fd://3' +
                   //'fd://4 ' +
                   //'--reset-on-next-file=all ' +
-                  '--video-latency-hacks=yes ' +
+                  //'--video-latency-hacks=yes ' +
                   //'--af=lavfi="[alimiter=limit=0.9:level=enabled]" ' +
                   '--audio-normalize-downmix=yes ' +
                   //'--merge-files ' +
-                  '--demuxer-lavf-o-add=fflags=+nobuffer ' +
+                  //'--demuxer-lavf-o-add=fflags=+nobuffer ' +
                   //'--no-correct-pts ' + // a/v desync on seeking
                   //'--untimed ' +
                   //'--fps=60 ' +
@@ -195,7 +197,7 @@ async function getMetadata(url, headers={}, init) {
     if (!videoDetails.isLive) {
         console.warn('By Youtube rules, non-live videos have slow external download, bandwidth adaptive mode is disabled.');
     }
-    
+
     if (mediaMetadata.isLive || mediaMetadata.isPostLiveDvr){
         dashManifestURL = streamingData.dashManifestUrl;
         if(debug){console.debug('DASH Manifest URL:'+ dashManifestURL);}
@@ -682,10 +684,10 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
             }
         } else {
             if(!onlyMetadata){
-				console.info('VideoId: --->>> %o <<<---', url);
-			} else{
-				console.info('Pre-caching VideoId: --->>> %o <<<---', url);
-			}
+                console.info('VideoId: --->>> %o <<<---', url);
+            } else{
+                console.info('Pre-caching VideoId: --->>> %o <<<---', url);
+            }
             videoId = url;
         }
     }else {
@@ -727,37 +729,35 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
     }
     // If only metadata requested return with non error code:
     if (onlyMetadata){
-		return 2;
-	} else{
-		let status = metadata[videoId].status,
-			title = metadata[videoId].title,
-			author = metadata[videoId].author,
-			isLive = metadata[videoId].isLive,
-			isPostLiveDvr = metadata[videoId].isPostLiveDvr,
-			latencyClass = metadata[videoId].latencyClass,
-			channelId = metadata[videoId].channelId,
-			viewCount = metadata[videoId].viewCount,
-			shortDescription = metadata[videoId].shortDescription
-			;
-			
-		// Print Video Details;
-		console.info("Status: %o", status);
-	    console.info('Title: %o', title);
-	    console.info('Author: %o', author);
-	    console.info('Channel Id: %o', channelId);
-	    console.info('Views: ', viewCount);
-	    console.info('Is Live: ', isLive);
-	    console.info('Is PostLive: ', isPostLiveDvr);
-	    if (latencyClass) {
-			console.info('Latency Class: %o', latencyClass);
-	    }
-	    
-	    if (extraInfo && shortDescription) {
-	        console.info('Short Description:');
-	        console.info(shortDescription);
-	        //console.dir(console.dir(videoDetails.shortDescription.replace('\n\' \+', '')));
-	    }	
-	}
+        return 2;
+    }
+    let status = metadata[videoId].status,
+        title = metadata[videoId].title,
+        author = metadata[videoId].author,
+        isLive = metadata[videoId].isLive,
+        isPostLiveDvr = metadata[videoId].isPostLiveDvr,
+        latencyClass = metadata[videoId].latencyClass,
+        channelId = metadata[videoId].channelId,
+        viewCount = metadata[videoId].viewCount,
+        shortDescription = metadata[videoId].shortDescription
+        ;
+    // Print Video Details;
+    console.info("Status: %o", status);
+    console.info('Title: %o', title);
+    console.info('Author: %o', author);
+    console.info('Channel Id: %o', channelId);
+    console.info('Views: ', viewCount);
+    console.info('Is Live: ', isLive);
+    console.info('Is PostLive: ', isPostLiveDvr);
+    if (latencyClass) {
+        console.info('Latency Class: %o', latencyClass);
+    }
+    if (extraInfo && shortDescription) {
+        console.info('Short Description:');
+        console.info(shortDescription);
+        //console.dir(console.dir(videoDetails.shortDescription.replace('\n\' \+', '')));
+    }
+    //
     /*if (metadata[videoId]['downloadFinished']){
         console.info('VIDEOID; ' + videoId + 'ALready DOWNLOADED');
         return 3;
@@ -776,7 +776,7 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
     audioMetadata = metadata[videoId].audio;
     videoMetadata = metadata[videoId].video;
     // Diferentiate live|postlive from non-live:
-    if (metadata[videoId].isLive || metadata[videoId].isPostLiveDvr){
+    if (isLive || (isPostLiveDvr && !live)){
         aid = audioMetadata.length - 1;
         if (fixed){
             vid = videoMetadata.length - 1;
@@ -813,7 +813,7 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
         svurl = vurl + manifestSequencePath + sq; //+ '&range=0-1024000';
     }else{
         // console.dir(metadata[videoId])
-        if(!args.includes('-n')){
+        if(live){
             console.info('This item is not a live stream, ' +
                          'pass -n option to play non-live ' +
                          'videos (Partial support).')
@@ -896,13 +896,17 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
     //console.debug(ipcString);
     let loadfileMode, ipcCommand;
     let mpvTitle = `${metadata[videoId].title.replace(':',';') + ' - ' + metadata[videoId].author}`;
+    mpv.send({ "command": ["set",  "osd-playing-msg", '${media-title}']});
     if (live){
         ipcCommand = { "command": ["set",  "force-media-title", mpvTitle]};
         if(debug){console.debug(ipcCommand);}
         mpv.send(ipcCommand);
-        mpv.send({ "command": ["show-text", mpvTitle, 4000]});
+        //mpv.send({ "command": ["set",  "osd-italic", "yes"]});
+        //mpv.send({ "command": ["set",  "osd-align-x", "center"]});
+        //mpv.send({ "command": ["set",  "osd-playing-msg-duration", '4000']});
+
     }else {
-        if (metadata[videoId].isLive){
+        if (isLive){
             console.warn('This is a live stream but non-live mode enabled, skipping...');
             return 1;
         }
@@ -1251,13 +1255,13 @@ async function  main() {
             }
             //if (result !==2){break;}
         }else{
-            if (init){
+            /*if (init){
                 //Pre-cache next URL metadata informations:
                 if (urls[eid+1]){
                     result = openURL(urls[eid + 1], fd, mpv, 0, 1);
                     results.splice(eid + 1, 1, result);
                 }
-            }
+            }*/
             if (results[eid]!==1){
                 result = await openURL(urls[eid], fd, mpv, 0, 0);
                 results.splice(eid, 1, result);
