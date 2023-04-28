@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /*jshint esversion: 8 */
 "use strict";
-const http = require('https'),
+const {performance} = require('perf_hooks'),
+      http = require('https'),
       net = require('net'),
       fs = require('fs'),
       child_process = require('child_process'),
@@ -25,6 +26,7 @@ const http = require('https'),
       noVolNor = args.includes('-nv'),
       order = args.includes('-order'),
       orderType = args.slice(args.indexOf('-order'))[1],
+      onlyAudio = args.includes('-oa'),
       searchMode = args.includes('-s'),
       searchTerm = args.slice(args.indexOf('-s'))[1],
       videoCodecsPriorities = args.slice(args.indexOf('-vc'))[1]||'vp9,avc1,av01',
@@ -32,19 +34,21 @@ const http = require('https'),
       maxWidth = Math.round(Number(args.slice(args.indexOf('-mw'))[1]))||4096,
       maxFps = Math.round(Number(args.slice(args.indexOf('-mf'))[1]))||60,
       maxHeight = Math.round(Number(args.slice(args.indexOf('-mh'))[1]))||720,
-      maxResults = Math.round(Number(args.slice(args.indexOf('-mr'))[1]))
-      ;
-
-const metaPostdata = {"context":
+      maxResults = Math.round(Number(args.slice(args.indexOf('-mr'))[1])),
+      urlPassthrough = 1,
+      ffmuxinargs = ' -thread_queue_size 100512 -flags +low_delay -i ',
+      ffmuxoutargs = ' -c copy -copyts -flags +low_delay -f mpegts ',
+      //-tune zerolatency -write_index 0 -f_strict experimental -syncpoints timestamped
+      ffmuxbaseargs = '-v fatal -nostdin -xerror',
+      metaPostdata = {"context":
                         {"client":
                             {"hl": "en", "clientName": "WEB",
                              "clientVersion": "2.20210721.00.00",
                              "mainAppWebInfo": {"graftUrl": 0}
                             }
                         },"videoId": 0
-                    };
-
-const metaPostHeaders = {
+                    },
+      metaPostHeaders = {
              'Accept': 'application/json',
              'Authorization': 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
              'Content-Type': 'application/json'
@@ -56,6 +60,7 @@ if (help){
     console.info('  -nc                 Disable cache to disk of results found with search mode.');
     console.info('  -order [date,rating,...]   Sort search results found by this order.');
     console.info('  -n                  Enable streaming of non-live videos found. (Partial support)');
+    console.info('  -oa                 Open only audio sources from all streams.');
     console.info('  -mh [number]        Maximum video height allowed.');
     console.info('  -mw [number]        Maximum video width allowed.');
     console.info('  -mf [number]        Maximum video fps allowed.');
@@ -75,7 +80,7 @@ if (order) {
         process.exit();
     }
 }
-let videoCodecsPrio, audioCodecsPrio;
+let videoCodecsPrio;
 if (videoCodecsPriorities) {
     videoCodecsPrio = videoCodecsPriorities.split(',');
     let choices=['vp9', 'avc1', 'av01'];
@@ -84,6 +89,7 @@ if (videoCodecsPriorities) {
         process.exit();
     }
 }
+let audioCodecsPrio;
 if (audioCodecsPriorities) {
     audioCodecsPrio = audioCodecsPriorities.split(',');
     let choices=['opus', 'mp4a'];
@@ -93,25 +99,10 @@ if (audioCodecsPriorities) {
     }
 }
 // Variables:
-let     ffmuxinargs,
-        ffmuxoutargs,
-        urlPassthrough=1,
-        ffmuxargs,
-        next=0;
-
-//var httpRetries = 8;
-// ffmpeg muxer:
-ffmuxinargs = ' -thread_queue_size 100512 -flags +low_delay -i ';
-ffmuxoutargs = ' -c copy -copyts -flags +low_delay -f mpegts ';
-ffmuxargs = '-v fatal -nostdin -xerror' +
-            ffmuxinargs + 'async:pipe:3' +
-            ffmuxinargs + 'async:pipe:4' +
-            ffmuxoutargs + 'pipe:1';
-//-tune zerolatency -write_index 0 -f_strict experimental -syncpoints timestamped
-let mpvargs =   '--idle ' +
+let next=0,
+    mpvargs =   '--idle ' +
                   //'--input-ipc-server=/tmp/mpvsocket ' +
                   '--player-operation-mode=pseudo-gui ' +
-                  '--profile=low-latency ' +
                   //'--demuxer-lavf-linearize-timestamps=yes ' +
                   '--demuxer-seekable-cache=yes ' +
                   '--demuxer-max-bytes=' + 50 * 1048576 + ' ' +
@@ -124,12 +115,10 @@ let mpvargs =   '--idle ' +
                   //'--loop-playlist=force ' +
                   '--prefetch-playlist=yes ' +
                   //'--playlist=fd://0 ' +
-                  //'--audio-file=fd://3' +
-                  //'fd://4 ' +
                   //'--reset-on-next-file=all ' +
                   //'--video-latency-hacks=yes ' +
                   //'--af=lavfi="[alimiter=limit=0.9:level=enabled]" ' +
-                  '--audio-normalize-downmix=yes ' +
+                  //'--audio-normalize-downmix=yes ' +
                   //'--merge-files ' +
                   //'--demuxer-lavf-o-add=fflags=+nobuffer ' +
                   //'--no-correct-pts ' + // a/v desync on seeking
@@ -141,9 +130,13 @@ let mpvargs =   '--idle ' +
                   '--input-ipc-client=fd://3 ' +
                  //'--really-quiet'+
                  //' - ' +
-                 '--keep-open';
-if (fullscreen){mpvargs += ' --fullscreen'}
-if (!noVolNor){mpvargs += ' --af=lavfi=[loudnorm=I=-22:TP=-1.5:LRA=2]'}
+                 '--keep-open'
+                 ;
+if (fullscreen){mpvargs += ' --fullscreen';}
+if (!noVolNor){mpvargs += ' --af=lavfi=[loudnorm=I=-22:TP=-1.5:LRA=2]';}
+if (live){
+    mpvargs += ' --profile=low-latency';
+}
 
 async function getMetadata(url, headers={}, init) {
     let mediaMetadata = {},
@@ -192,7 +185,7 @@ async function getMetadata(url, headers={}, init) {
     mediaMetadata.author = videoDetails.author.replace(/,/g,';');
     mediaMetadata.channelId = videoDetails.channelId;
     mediaMetadata.viewCount = Number(videoDetails.viewCount);
-    mediaMetadata.shortDescription = videoDetails.shortDescription
+    mediaMetadata.shortDescription = videoDetails.shortDescription;
     mediaMetadata.latencyClass = videoDetails.latencyClass && videoDetails.latencyClass.slice(42).replace('_',' ');
     if (!videoDetails.isLive) {
         console.warn('By Youtube rules, non-live videos have slow external download, bandwidth adaptive mode is disabled.');
@@ -410,7 +403,7 @@ async function request(url, type='GET', headers={}, ffmpeg, fd, playlistEntryId)
                                         await ffmpeg.stdio[fd].end();
                                         await ffmpeg.kill('SIGKILL');
                                         await res.destroy(new Error('Next item requested.'));
-                                        r.destroy( new Error('Next item requested '));
+                                        //r.destroy( new Error('Next item requested '));
                                     }
                                 } else{
                                     res.destroy(new Error('Http error in the other request...'));
@@ -455,7 +448,7 @@ async function request(url, type='GET', headers={}, ffmpeg, fd, playlistEntryId)
                     if (httpRetries>0) {
                             httpRetries--;
                             if(debug){console.debug("Retrying, remaining tries: " + httpRetries);}
-                            await new Promise((r)=>{setTimeout(r, retrySecs*1000)});
+                            await new Promise((r)=>{setTimeout(r, retrySecs*1000);});
                             retriableRequest();
                     } else{
                         //if(debug){console.debug('HTTP error ' + res.statusCode)};
@@ -499,8 +492,8 @@ async function request(url, type='GET', headers={}, ffmpeg, fd, playlistEntryId)
                     //ffmpeg.stdio[fd].end();
                     if(!ffmpeg && type==='GET' ){body = '';}
                     console.info("Trying to resume stream from byte=" + bytesWritten);
-                    options.headers['Range'] = 'bytes=' + bytesWritten + '-';
-                    await new Promise((r)=>{setTimeout(r, retrySecs*1000)});
+                    options.headers.Range = 'bytes=' + bytesWritten + '-';
+                    await new Promise((r)=>{setTimeout(r, retrySecs*1000);});
                     //onErrorDuration += (performance.now() - onErrorStartTime)/1000;
                     return retriableRequest();
 
@@ -530,14 +523,24 @@ async function request(url, type='GET', headers={}, ffmpeg, fd, playlistEntryId)
 }
 
 function segmentCreator(murls, fd, mpv, isLive, playlistEntryId){
-    let ffmpeg;
-    let audioRequest,beforeRequest,requestsLapse,
-        videoRequest;
+
     let segmenter = new Promise((resolve, reject) => {
-        ffmpeg = child_process.spawn(ffmpegURI, ffmuxargs.split(' '),
-                { stdio: ['ignore', mpv.stdio[fd], process.stderr,
-                          'pipe', 'pipe']
-                });
+        let ffmpeg,
+            audioRequest,
+            videoRequest,
+            stdios = { stdio: ['ignore', mpv.stdio[fd], process.stderr]},
+            ffMuxAllArgs;
+        ffMuxAllArgs = ffmuxbaseargs + ffmuxinargs  + 'async:pipe:3';
+        stdios.stdio.push('pipe');
+        if (!onlyAudio){
+            stdios.stdio.push('pipe');
+            ffMuxAllArgs += ffmuxinargs + 'async:pipe:4';
+        }
+        ffMuxAllArgs += ffmuxoutargs + 'pipe:1'
+        //console.log('FFMUXALL: ' + ffMuxAllArgs);
+        //console.log('STDIOS: ' + stdios);
+        ffmpeg = child_process.spawn(ffmpegURI, ffMuxAllArgs.split(' '),
+                                     stdios);
             //let audioRequest=request(murls[0],'GET',{},mpv.stdio[3]);
             //let videoRequest=request(murls[1],'GET',{},mpv.stdio[4]);
         ffmpeg.on('error', (err)=>{
@@ -549,10 +552,18 @@ function segmentCreator(murls, fd, mpv, isLive, playlistEntryId){
             //httpRetries=5;
             //beforeRequest = performance.now();
             try {
-                audioRequest=request(murls[0],'GET',{},ffmpeg,3,playlistEntryId);
-                videoRequest=request(murls[1],'GET',{},ffmpeg,4,playlistEntryId);
-            } catch (error) {
-                console.info('Error on Media requests: ' + error)
+                audioRequest = request(murls[0],
+                                         'GET',
+                                         {},
+                                         ffmpeg,
+                                         3,
+                                         playlistEntryId);
+                if (!onlyAudio){
+                    videoRequest=request(murls[1],'GET',{},ffmpeg,4,
+                                         playlistEntryId);
+                }
+                } catch (error) {
+                console.info('Error on Media requests: ' + error);
             }
             if(debug){console.debug('Audio PREresolved: ');}
             if (isLive){
@@ -783,7 +794,7 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
         }else{
             vid = Math.min(videoMetadata.length - 1, 3);
         }
-        ffmuxargs = ffmuxargs.replace('-f nut','-f mpegts');
+        //ffmuxargs = ffmuxargs.replace('-f nut','-f mpegts');
         aurl = audioMetadata[aid].BaseURL;
         vurl = videoMetadata[vid].BaseURL;
         minBandwidthRequired = metadata[videoId].video[vid].$.bandwidth;
@@ -816,11 +827,11 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
         if(live){
             console.info('This item is not a live stream, ' +
                          'pass -n option to play non-live ' +
-                         'videos (Partial support).')
-            return 0
+                         'videos (Partial support).');
+            return 0;
         }
         let prefAudioFormat,prefVideoFormat,prefAudioCodecs,prefVideoCodecs,audioFormat, videoFormat;
-        ffmuxargs = ffmuxargs.replace('-f mpegts','-f nut');
+        //ffmuxargs = ffmuxargs.replace('-f mpegts','-f nut');
         // Select audio and video media url sources:
         for (let pacodec of audioCodecsPrio){
             for (let audioFormat in audioMetadata){
@@ -911,12 +922,20 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
             return 1;
         }
         if (urlPassthrough){
-            mpv.send({ "command": ["loadfile", `${svurl}`, 'append-play',
-                                   "audio-file=" + `${saurl}`+",force-media-title=" + mpvTitle ]});
+            // Non-live streams are opened directly by the player:
+            ipcCommand = { "command": ["loadfile", `${svurl}`, 'append-play']};
+            if (!onlyAudio ){
+                ipcCommand.command.push( "audio-file=" + `${saurl}`+
+                                          ",force-media-title=" + mpvTitle);
+            }else{
+                ipcCommand.command.splice(1,1, `${saurl}`);
+                ipcCommand.command.push("force-media-title=" + mpvTitle);
+            }
+            mpv.send(ipcCommand);
             return 2;
         }
     }
-    //console.log(ipcCommand);
+    console.log(ipcCommand);
     //mpv.send({ command: [ 'playlist-play-index', next - 1 ] })
     videoQualitiesQuantity = metadata[videoId].video.length;
     murls = [saurl, svurl];
@@ -925,10 +944,13 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
     let timeUrlOpen,audioResults,videoResults,startMiliSecsTime,segmenterDurationSecs,
         requestDurationSecs,goUp=false,goDown=false,bandEstAvg,bandEstAvgs=[];
     // Main loop:
-    while(resp = await segmentCreator(murls, fd, mpv, metadata[videoId].isLive, playlistEntryId)){
+    while(resp = await segmentCreator(murls, fd, mpv, isLive, playlistEntryId)){
         if(debug){console.debug('NEXT ITEM REQUESTED?: ' + next);}
-        videoResults = await resp[1];
-        headers = await videoResults[0];
+        //if (!onlyAudio ){
+            videoResults = await resp[1];
+            if (videoResults){headers = await videoResults[0];}
+
+        //}
         timeUrlOpen = (new Date() - metadata[videoId].dateTime)/1000;
         if(debug){
             console.debug('URL Expire in Seconds: ' + metadata[videoId].expiresInSeconds);
@@ -937,7 +959,7 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
         // Refresh stream metadata after 6hrs URLs lifetime - 1hr:
         if ( timeUrlOpen >= metadata[videoId].expiresInSeconds - 3600){
             if(debug){console.debug('URLS Expired. Refreshing.' );}
-            console.debug('URLs Expired. Refreshing stream metadata...')
+            console.debug('URLs Expired. Refreshing stream metadata...');
             metadata[videoId] = 0;
             return openURL(url,fd, mpv, sq + 1);
         }
@@ -947,7 +969,7 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
             await resp[0];
             next=false;*/
             next=false;
-            if (metadata[videoId].isLive){
+            if (isLive){
                 //mpv.send({ command: [ 'playlist-next'] });
                 //mpv.send({ command: [ 'playlist-play-index', 'current' ] })
             } else{
@@ -958,88 +980,92 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
             return 2;
             //break;
         }
-        if (!headers){
-            let errorMsg = 'Unable to stream media content, giving up.'
+        audioResults = await resp[0];
+        await audioResults[0];
+        if (!audioResults || (!videoResults && !onlyAudio)){
+            let errorMsg = 'Unable to stream media content, giving up.';
             if(!fullscreen){
                 child_process.execFile('notify-send', ['YTdash: ' +
-                                           metadata[videoId].title, errorMsg, '-t', 3000])
+                        metadata[videoId].title, errorMsg, '-t', 3000]);
             }
             console.info(errorMsg);
             //mpv.send({ "command": ["playlist-next"] });
             return 1;
         }
         //console.dir(headers)
-        if (metadata[videoId].isLive || metadata[videoId].isPostLiveDvr){
-            bandEst = headers['x-bandwidth-est']/8/1024;
-            bandEst2 = headers['x-bandwidth-est2']/8/1024;
-            bandEst3 = headers['x-bandwidth-est3']/8/1024;
-            bandEstComp = headers['x-bandwidth-est-comp']/8/1024;
-            bandEstAvg = (bandEst + bandEst2 + bandEst3)/3;
-            bandEstAvgs.push(bandEstAvg);
-            if (bandEstAvgs.length > 5 ){bandEstAvgs.shift()};
-            bandEstAvg = 0;
-            bandEstAvgs.forEach(e=>bandEstAvg+=e);
-            bandEstAvg /= 5;
-            if(debug){console.debug('SEQUENCE NUMBER: ' + sq);}
-            if(debug){console.debug("VID: " + vid);}
-            if(debug){console.debug('BAND EST: ' + bandEst + ' Kb/s');}
-            if(debug){console.debug('BAND EST2: ' + bandEst2 + ' Kb/s');}
-            if(debug){console.debug('BAND EST3: ' + bandEst3 + ' Kb/s');}
-            if(debug){console.debug('BAND Avg: ' + bandEstAvg + ' Kb/s');}
-            if(debug){console.debug('BAND AvgS: ' + bandEstAvgs);}
-            if(debug){console.debug('MIN BAND REQ: ' + minBandwidthRequired/8/1024);}
-            if(debug){console.debug('BAND EST COMP: ' + bandEstComp + ' Kb/s');}
-            audioResults = await resp[0];
-            await audioResults[0];
-            //if(startMiliSecsTime) {
-            // if any request had error do not save segment stream duration:
-            if(!audioResults[4] || !videoResults[4]) {
-                // Use highest media type duration as segment duration:
-                if(videoResults[3] >= audioResults[3]){
-                    requestDurationSecs = videoResults[3];
-                } else {
-                    requestDurationSecs = audioResults[3];
+        if (isLive || isPostLiveDvr){
+            sq++;
+            if(!onlyAudio){
+                bandEst = headers['x-bandwidth-est']/8/1024;
+                bandEst2 = headers['x-bandwidth-est2']/8/1024;
+                bandEst3 = headers['x-bandwidth-est3']/8/1024;
+                bandEstComp = headers['x-bandwidth-est-comp']/8/1024;
+                bandEstAvg = (bandEst + bandEst2 + bandEst3)/3;
+                bandEstAvgs.push(bandEstAvg);
+                if (bandEstAvgs.length > 5 ){bandEstAvgs.shift();}
+                bandEstAvg = 0;
+                bandEstAvgs.forEach(e=>bandEstAvg+=e);
+                bandEstAvg /= 5;
+                if(debug){console.debug('SEQUENCE NUMBER: ' + sq);}
+                if(debug){console.debug("VID: " + vid);}
+                if(debug){console.debug('BAND EST: ' + bandEst + ' Kb/s');}
+                if(debug){console.debug('BAND EST2: ' + bandEst2 + ' Kb/s');}
+                if(debug){console.debug('BAND EST3: ' + bandEst3 + ' Kb/s');}
+                if(debug){console.debug('BAND Avg: ' + bandEstAvg + ' Kb/s');}
+                if(debug){console.debug('BAND AvgS: ' + bandEstAvgs);}
+                if(debug){console.debug('MIN BAND REQ: ' + minBandwidthRequired/8/1024);}
+                if(debug){console.debug('BAND EST COMP: ' + bandEstComp + ' Kb/s');}
+                //if(startMiliSecsTime) {
+                // if any request had error do not save segment stream duration:
+                if(!audioResults[4] || !videoResults[4]) {
+                    // Use highest media type duration as segment duration:
+                    if(videoResults[3] >= audioResults[3]){
+                        requestDurationSecs = videoResults[3];
+                    } else {
+                        requestDurationSecs = audioResults[3];
+                    }
+                    // segmenterDurationSecs = Math.round((performance.now() - startMiliSecsTime))/1000;
+                    segmentsDurationsSecs.push(requestDurationSecs);
+                    if (segmentsDurationsSecs.length > 3) {
+                        segmentsDurationsSecs.shift();
+                    }
+                    segmentsDurationsSecsAvg = 0;
+                    segmentsDurationsSecs.forEach(e=>segmentsDurationsSecsAvg+=e);
+                    segmentsDurationsSecsAvg /= segmentsDurationsSecs.length;
+                    if(debug){console.debug('-----------> Segments Durs: ' + segmentsDurationsSecs);}
+                    if(debug){console.debug('-----------------------> DOWNLOADs Avg DURATION: ' + segmentsDurationsSecsAvg + ' secs');}
                 }
-                // segmenterDurationSecs = Math.round((performance.now() - startMiliSecsTime))/1000;
-                segmentsDurationsSecs.push(requestDurationSecs);
-                if (segmentsDurationsSecs.length > 3) {
-                    segmentsDurationsSecs.shift();
+                // startMiliSecsTime = performance.now();
+                // Check to go up in media quality:
+                if ( !fixed && !goDown && vid < videoQualitiesQuantity - 1){
+                    if (bandEstAvg>1.3*(minBandwidthRequired/8/1024) &&
+                        metadata[videoId].video[vid+1].$.height<=maxHeight){
+                        goUp=true;
+                        if(debug){console.debug('====>> GOING UP');}
+                        vid++;
+                        vurl = metadata[videoId].video[vid].BaseURL;
+                        minBandwidthRequired = metadata[videoId].video[vid].$.bandwidth;
+                    }
+                // Check to go down:
                 }
-                segmentsDurationsSecsAvg = 0;
-                segmentsDurationsSecs.forEach(e=>segmentsDurationsSecsAvg+=e);
-                segmentsDurationsSecsAvg /= segmentsDurationsSecs.length;
-                if(debug){console.debug('-----------> Segments Durs: ' + segmentsDurationsSecs);}
-                if(debug){console.debug('-----------------------> DOWNLOADs Avg DURATION: ' + segmentsDurationsSecsAvg + ' secs');}
-            }
-            // startMiliSecsTime = performance.now();
-            // Check to go up in media quality:
-            if ( !fixed && !goDown && vid < videoQualitiesQuantity - 1){
-                if (bandEstAvg>1.3*(minBandwidthRequired/8/1024) &&
-                    metadata[videoId].video[vid+1].$.height<=maxHeight){
-                    goUp=true;
-                    if(debug){console.debug('====>> GOING UP')}
-                    vid++;
-                    vurl = metadata[videoId].video[vid].BaseURL;
-                    minBandwidthRequired = metadata[videoId].video[vid].$.bandwidth;
+                goDown=false;
+                if ( !fixed && !goUp && vid > 0 && segmentsDurationsSecsAvg > segmentDurationSecs * 1.2 &&
+                    segmentsDurationsSecs[2] > segmentDurationSecs * 1.2 ){
+                    //if (bandEstAvg<1.5*(minBandwidthRequired/8/1024)){
+                        if(debug){console.debug('====>> GOING DOWN');}
+                        goDown=true;
+                        vid--;
+                        vurl = metadata[videoId].video[vid].BaseURL;
+                        minBandwidthRequired = metadata[videoId].video[vid].$.bandwidth;
+                    //}
                 }
-            // Check to go down:
-            }
-            goDown=false;
-            if ( !fixed && !goUp && vid > 0 && segmentsDurationsSecsAvg > segmentDurationSecs * 1.2 &&
-                segmentsDurationsSecs[2] > segmentDurationSecs * 1.2 ){
-                //if (bandEstAvg<1.5*(minBandwidthRequired/8/1024)){
-                    if(debug){console.debug('====>> GOING DOWN')}
-                    goDown=true;
-                    vid--;
-                    vurl = metadata[videoId].video[vid].BaseURL;
-                    minBandwidthRequired = metadata[videoId].video[vid].$.bandwidth;
-                //}
-            }
-            goUp=false;
-            if(videoResults[2]){
-                //vurl = videoResults[2].slice(0,videoResults[2].indexOf(manifestSequencePath))
-                vurl = videoResults[2] + '/';
-                if(debug){console.debug('----------->> NEW VURL HREF: ' + vurl);}
+                goUp=false;
+                if(videoResults[2]){
+                    //vurl = videoResults[2].slice(0,videoResults[2].indexOf(manifestSequencePath))
+                    vurl = videoResults[2] + '/';
+                    if(debug){console.debug('----------->> NEW VURL HREF: ' + vurl);}
+                }
+                murls[1] = vurl + manifestSequencePath + sq;
             }
             if(audioResults[2]){
                 //aurl = audioResults[2].slice(0,audioResults[2].indexOf(manifestSequencePath))
@@ -1048,13 +1074,10 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
             }
             //murls = [audioResults[2], videoResults[2]];
             //console.dir(murls);
-            sq++;
             murls[0] = aurl + manifestSequencePath + sq;
-            murls[1] = vurl + manifestSequencePath + sq;
-
         } else {
             console.info("Video ended.");
-            metadata[videoId]['downloadFinished'] = 1;
+            //metadata[videoId]['downloadFinished'] = 1;
             return 3;
         }
 
@@ -1073,27 +1096,27 @@ async function apiSearch(query){
     apiBaseURL = 'https://www.googleapis.com/youtube/v3/';
     midURL = new URLSearchParams(apiParameters).toString();
     apiUrlCheckLive = apiBaseURL + 'videos?' + midURL;
-    apiType = 'search'
-    apiParameters['q'] = query;
-    apiParameters['type'] = 'video'
-    apiParameters['order'] = 'relevance'
-    apiParameters['videoDimension'] = '2d'
-    //apiParameters['regionCode'] = 'AR'
-    apiParameters['safeSearch'] = 'none'
-    apiParameters['videoDuration'] = 'any'
-    apiParameters['videoType'] = 'any'
-    apiParameters['type'] = 'video'
-    apiParameters['videoLicense'] = 'any'
-    apiParameters['videoDefinition'] = 'any'  // high|any
-    apiParameters['maxResults'] = 5
-    apiParameters['videoEmbeddable'] = 'any'
-    apiParameters['videoSyndicated'] = 'true'
-    if (order){apiParameters['order'] = orderType;}
-    if (live){apiParameters['eventType'] = 'live'}
-    if (args.includes('-c')){apiParameters['eventType']='completed'}
-    if (args.includes('-u')){apiParameters['eventType']='upcoming'}
+    apiType = 'search';
+    apiParameters.q = query;
+    apiParameters.type = 'video';
+    apiParameters.order = 'relevance';
+    apiParameters.videoDimension = '2d';
+    //apiParameters['regionCode'] = 'AR';
+    apiParameters.safeSearch = 'none';
+    apiParameters.videoDuration = 'any';
+    apiParameters.videoType = 'any';
+    apiParameters.type = 'video';
+    apiParameters.videoLicense = 'any';
+    apiParameters.videoDefinition = 'any';  // high|any
+    apiParameters.maxResults = 5;
+    apiParameters.videoEmbeddable = 'any';
+    apiParameters.videoSyndicated = 'true';
+    if (order){apiParameters.order = orderType;}
+    if (live){apiParameters.eventType = 'live';}
+    if (args.includes('-c')){apiParameters.eventType ='completed';}
+    if (args.includes('-u')){apiParameters.eventType ='upcoming';}
     if (maxResults > 0 && maxResults <= 50){
-        apiParameters['maxResults'] = maxResults;
+        apiParameters.maxResults = maxResults;
     }
     for (let parameter in apiParameters) {
         cacheFilename += parameter + '=' + apiParameters[parameter] + '+';
@@ -1114,16 +1137,16 @@ async function apiSearch(query){
             } else {
                 if(debug){console.debug("Cannot get JSON from cache file.");}
             }
-        } else{ fs.unlinkSync(cacheFilename) }
+        } else{ fs.unlinkSync(cacheFilename); }
     }
     if (!items) {
-        apiParameters['part'] = 'snippet';
-        apiParameters['key'] = 'AIzaSyBSnNQ7qOmLPxC5CaHH9BWHqAgrecwzCVA';
+        apiParameters.part = 'snippet';
+        apiParameters.key = 'AIzaSyBSnNQ7qOmLPxC5CaHH9BWHqAgrecwzCVA';
 
-        apiParameters['fields'] = 'items(id,snippet/title,snippet/' +
+        apiParameters.fields = 'items(id,snippet/title,snippet/' +
                                   'channelTitle,snippet/description,' +
                                   'snippet/liveBroadcastContent,' +
-                                  'snippet/publishedAt)'
+                                  'snippet/publishedAt)';
         urlEnd = new URLSearchParams(apiParameters).toString();
         apiURL = apiBaseURL + apiType + '?' + urlEnd;
         if(debug){console.debug("API URL: " + apiURL);}
@@ -1136,23 +1159,22 @@ async function apiSearch(query){
             fs.writeFileSync(cacheFilename, JSON.stringify(items));
 
         }
-    } else { console.info('ºº Using cached search results. ºº') }
+    } else { console.info('ºº Using cached search results. ºº');}
     console.dir(items);
     items.forEach(item=>videoIds.push(item.id.videoId));
     if(debug){console.dir("videoIds" + videoIds);}
     return videoIds;
 }
 
-let results=[0],
-    nextAvailable;
-var metadata={},videoId;
+let results=[0];
+var metadata={};
 // MAIN ULTRA_ASYNC_GENERIC_LOOP_2000:
 async function  main() {
-    fs.mkdirSync(cacheDir, {recursive:true})
-    fs.mkdirSync(configDir, {recursive:true})
+    fs.mkdirSync(cacheDir, {recursive:true});
+    fs.mkdirSync(configDir, {recursive:true});
     let mpvStdio = {stdio: ['ignore', process.stdout, process.stderr, 'ipc']},
         parameter,urls;
-    if(debug){console.debug('ARGS: %o', args)}
+    if(debug){console.debug('ARGS: %o', args);}
     urls = args.filter(e=>e!=='-s' && e!=='-n'&& e!=='-u'&& e!=='-f' &&
                        e!=='-debug' &&  e!=='-mw' &&  e!=='-mh' &&
                        e!=='-mf' && (e.startsWith('http') ||
@@ -1176,7 +1198,7 @@ async function  main() {
             process.exit();
         }
     }
-    if(debug){console.debug('URLS: %o', urls)}
+    if(debug){console.debug('URLS: %o', urls);}
     /*for (let times=0; times < urls.length;times++){
                 mpvStdio.stdio.push('pipe');
                 //console.log('Mpv STDIO: %o', mpvStdio.stdio)
@@ -1200,7 +1222,7 @@ async function  main() {
 
     mpv.on('message', message=>{
         let event, itemEntryId, reason;
-        if(debug){console.log(message)}
+        if(debug){console.log(message);}
         //console.log(message)
         event = message.event;
         itemEntryId = message.playlist_entry_id;
@@ -1215,7 +1237,7 @@ async function  main() {
         }*/
         if ( message.event === 'end-file' && reason==='stop' && live){
             //next=itemEntryId;
-            next=1
+            next=1;
         }
         /*if ( message.event === 'start-file' ){
             console.log('Starting Playlist ID:' + itemEntryId);
@@ -1225,7 +1247,7 @@ async function  main() {
     });
     //mpv.send({ "command": ["observe_property", 1, "playback-abort"] });
     //mpv.send({ "command": ["observe_property", 1, "cache-buffering-state"] });
-    mpv.send({ "command": ["observe_property", 1, "playlist-pos"] });
+    //mpv.send({ "command": ["observe_property", 1, "playlist-pos"] });
     //mpv.send({ "command": ["observe_property", 1, "playlist-next"] });
     if(live){
         mpv.send({ "command": ["loadfile", "fd://4", 'append-play']});
@@ -1237,6 +1259,7 @@ async function  main() {
         init=1,
         fd=4;
     while(true){
+
         if(!live){
             result = await openURL(urls[eid], fd, mpv);
             results.splice(eid, 1, result);
