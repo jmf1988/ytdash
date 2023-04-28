@@ -26,6 +26,7 @@ ytdash.js [(URLs|Video Ids)|-s search term] [Options]
   -nc                 Disable cache to disk of results found with search mode.
   -order [date,rating,...]   Sort search results found by this order.
   -n                  Enable streaming of non-live videos found. (Partial support)
+  -oa                 Open only audio sources from all streams.
   -mh [number]        Maximum video height allowed.
   -mw [number]        Maximum video width allowed.
   -mf [number]        Maximum video fps allowed.
@@ -36,6 +37,7 @@ ytdash.js [(URLs|Video Ids)|-s search term] [Options]
   -vc [vp9,avc1,av01] Video codecs priorities for non-live streams, comma separated.
   -ac [opus,mp4a]     Audio codecs priorities for non-live streams, comma separated.
   -debug              Show debugging console output.
+
 
 </pre>
 
