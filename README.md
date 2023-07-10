@@ -8,17 +8,19 @@ Ytdash Required dependencies:
  
 JAVASCRIPT version dependencies installation:
 
-- Debian based:
-apt-get install nodejs node-xml2js mpv
+- DEBIAN based:
+apt install nodejs node-xml2js mpv
+- UBUNTU based:
+snap install node && npm install xml2js && apt install mpv
 
 Extras:
-apt-get install fonts-symbola fonts-noto-color-emoji libnotify-bin
+* apt install fonts-symbola fonts-noto-color-emoji libnotify-bin
 
-OR
+IF the distro has OUTDATED node version (<18.15):
 
-Download an up to date node from https://nodejs.org/en, install it and then npm install xml2js.
+*(Install an up to date node from https://nodejs.org/en) && npm install xml2js.
 
-Download ytdash.js and chmod +x ytdash.js.
+THEN -> Download ytdash.js and chmod +x ytdash.js.
 <pre>
 CLI Usage: 
 ytdash.js [(URLs|Video Ids)|-s search term] [Options]
