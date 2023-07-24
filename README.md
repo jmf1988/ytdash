@@ -18,7 +18,7 @@ Extras:
 
 IF the distro has OUTDATED node version (<18.15):
 
-*(Install an up to date node from https://nodejs.org/en) && npm install xml2js.
+*(Install an up to date node from [https://nodejs.org/en](https://nodejs.org/dist/v18.17.0/node-v18.17.0-linux-x64.tar.xz)) && npm install xml2js.
 
 THEN -> Download ytdash.js and chmod +x ytdash.js.
 <pre>
