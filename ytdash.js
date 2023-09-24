@@ -188,7 +188,7 @@ async function getMetadata(url, headers={}, init) {
     mediaMetadata.shortDescription = videoDetails.shortDescription;
     mediaMetadata.latencyClass = videoDetails.latencyClass && videoDetails.latencyClass.slice(42).replace('_',' ');
     if (!videoDetails.isLive) {
-        console.warn('By Youtube rules, non-live videos have slow external download, bandwidth adaptive mode is disabled.');
+        console.warn('\x1b[31m%s\x1b[0m', 'By Youtube rules, non-live videos have slow external download, bandwidth adaptive mode is disabled.');
     }
 
     if (mediaMetadata.isLive || mediaMetadata.isPostLiveDvr){
@@ -672,7 +672,9 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
         playlistEntryId = fd - playlistStartId,
         videoMetadata, audioMetadata;
     //await new Promise(r => setTimeout(r, 20000));
-    if(!url){ console.info("No URL detected"); return;}
+    // for what?:
+    //if(!url){ console.info("No URL detected"); return;}
+    //
     if (!url.startsWith('#')){
         if (url.length !== 11) {
             let urlp;
@@ -825,7 +827,7 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
     }else{
         // console.dir(metadata[videoId])
         if(live){
-            console.info('This item is not a live stream, ' +
+            console.info('\x1b[31m%s\x1b[0m', 'This item is not a live stream, ' +
                          'pass -n option to play non-live ' +
                          'videos (Partial support).');
             return 0;
@@ -873,7 +875,7 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
         vid = vcodec.length - 1;// Defaulting to highest video quality
         if (await vcodec.every(elem=>elem.signatureCipher)){
             //vcodec[0].signatureCipher
-            console.warn('===>>> Ciphered videos are not supported.');
+            console.warn('\x1b[31m%s\x1b[0m', '===>>> Ciphered videos are not supported.');
             //mpv.send({ command: [ 'playlist-next'] })
             //mpv.send({ "command": ["playlist-remove", playlistEntryId - 1] });
             //fd--
@@ -918,7 +920,7 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
 
     }else {
         if (isLive){
-            console.warn('This is a live stream but non-live mode enabled, skipping...');
+            console.warn('\x1b[31m%s\x1b[0m', 'This is a live stream but non-live mode enabled, skipping...');
             return 1;
         }
         if (urlPassthrough){
@@ -1170,6 +1172,7 @@ let results=[0];
 var metadata={};
 // MAIN ULTRA_ASYNC_GENERIC_LOOP_2000:
 async function  main() {
+	
     fs.mkdirSync(cacheDir, {recursive:true});
     fs.mkdirSync(configDir, {recursive:true});
     let mpvStdio = {stdio: ['ignore', process.stdout, process.stderr, 'ipc']},
@@ -1198,6 +1201,8 @@ async function  main() {
             process.exit();
         }
     }
+    
+    if(!urls.length){ console.info("No URLs given."); process.exit();}
     if(debug){console.debug('URLS: %o', urls);}
     /*for (let times=0; times < urls.length;times++){
                 mpvStdio.stdio.push('pipe');
