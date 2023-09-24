@@ -935,7 +935,7 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
             return 2;
         }
     }
-    console.log(ipcCommand);
+    //console.log(ipcCommand);
     //mpv.send({ command: [ 'playlist-play-index', next - 1 ] })
     videoQualitiesQuantity = metadata[videoId].video.length;
     murls = [saurl, svurl];
