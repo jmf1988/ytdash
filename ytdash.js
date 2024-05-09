@@ -105,8 +105,6 @@ let next=0,
                   '--player-operation-mode=pseudo-gui ' +
                   //'--demuxer-lavf-linearize-timestamps=yes ' +
                   '--demuxer-seekable-cache=yes ' +
-                  '--demuxer-max-bytes=' + 50 * 1048576 + ' ' +
-                  '--demuxer-max-back-bytes=' + 50 * 1048576 + ' ' +
                   '--cache=yes ' +
                   '--cache-secs=300 ' +
                   '--osd-playing-msg-duration=4000 ' +
@@ -136,6 +134,9 @@ if (fullscreen){mpvargs += ' --fullscreen';}
 if (!noVolNor){mpvargs += ' --af=lavfi=[loudnorm=I=-22:TP=-1.5:LRA=2]';}
 if (live){
     mpvargs += ' --profile=low-latency';
+    mpvargs += ' --cache-secs=300 ' +
+	       ' --demuxer-max-bytes=' + 50 * 1048576 + 
+               ' --demuxer-max-back-bytes=' + 50 * 1048576;
 }
 
 async function getMetadata(url, headers={}, init) {
