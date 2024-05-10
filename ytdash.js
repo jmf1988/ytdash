@@ -106,7 +106,6 @@ let next=0,
                   //'--demuxer-lavf-linearize-timestamps=yes ' +
                   '--demuxer-seekable-cache=yes ' +
                   '--cache=yes ' +
-                  '--cache-secs=300 ' +
                   '--osd-playing-msg-duration=4000 ' +
                   '--osd-align-x=center ' +
                   //'--loop-playlist ' +
