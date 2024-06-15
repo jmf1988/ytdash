@@ -132,7 +132,7 @@ let next=0,
 if (fullscreen){mpvargs += ' --fullscreen';}
 if (!noVolNor){mpvargs += ' --af=lavfi=[loudnorm=I=-22:TP=-1.5:LRA=2]';}
 if (live){
-    mpvargs += ' --profile=low-latency';
+    //mpvargs += ' --profile=low-latency';
     mpvargs += ' --cache-secs=300 ' +
 	       ' --demuxer-max-bytes=' + 50 * 1048576 + 
                ' --demuxer-max-back-bytes=' + 50 * 1048576;
