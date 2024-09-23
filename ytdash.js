@@ -138,7 +138,7 @@ if (live){
                ' --demuxer-max-back-bytes=' + 50 * 1048576;
 }
 
-async function getMetadata(url, headers={}, init) {
+async function getMetadata(url, headers={}) {
     let mediaMetadata = {},
         adaptiveMediaFormats = {},
         postRes,
@@ -643,14 +643,14 @@ function segmentCreator(murls, fd, mpv, isLive, playlistEntryId){
 }
 
 
-async function openURL(url,fd, mpv, sq, onlyMetadata){
+async function openURL(url,fd, mpv, sq, onlyMetadata, refreshMetadata){
         //metadata={},
         let segmentDurationSecs,
         segmentsDurationsSecs = [],
         segmentsDurationsSecsAvg,
         videoId,
-        aid,
-        vid,
+        //aid,
+        //vid,
         bandEst,
         bandEst2,
         bandEst3,
@@ -697,7 +697,7 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
             }
         } else {
             if(!onlyMetadata){
-                console.info('VideoId: --->>> %o <<<---', url);
+                //console.info('VideoId: --->>> %o <<<---', url);
             } else{
                 console.info('Pre-caching VideoId: --->>> %o <<<---', url);
             }
@@ -717,14 +717,14 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
     dateTime = new Date();
     //URLs expire in 6hrs:
     //if(debug){console.debug("MMMMEEETTAADDDDAAATTAEEEEEE!!: " + metadata[videoId])}
-    if (!metadata[videoId]){
+    //if (!metadata[videoId]){
         metadata[videoId] = await getMetadata(metadataUrl,
                                               metaPostHeaders, onlyMetadata);
         if(debug){console.debug("DATE CREATION ADDED: " );}
         //console.dir(metadata[videoId]);
-    } else{
-        console.info("ººº Using cached video details. ººº" );
-    }
+    //} else{
+     //   console.info("ººº Using cached video details. ººº" );
+    //}
     // If a video Id gives metadata errors it's skipped next time:
     if (metadata[videoId]===1){
             //console.log('Removing %s from playlist', videoId);
@@ -754,22 +754,25 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
         viewCount = metadata[videoId].viewCount,
         shortDescription = metadata[videoId].shortDescription
         ;
-    // Print Video Details;
-    console.info("Status: %o", status);
-    console.info('Title: %o', title);
-    console.info('Author: %o', author);
-    console.info('Channel Id: %o', channelId);
-    console.info('Views: ', viewCount);
-    console.info('Is Live: ', isLive);
-    console.info('Is PostLive: ', isPostLiveDvr);
-    if (latencyClass) {
-        console.info('Latency Class: %o', latencyClass);
-    }
-    if (extraInfo && shortDescription) {
-        console.info('Short Description:');
-        console.info(shortDescription);
-        //console.dir(console.dir(videoDetails.shortDescription.replace('\n\' \+', '')));
-    }
+    if(!refreshMetadata){
+		// Print Video Details;
+		console.info('VideoId: --->>> %o <<<---', videoId);
+		console.info("Status: %o", status);
+		console.info('Title: %o', title);
+		console.info('Author: %o', author);
+		console.info('Channel Id: %o', channelId);
+		console.info('Views: ', viewCount);
+		console.info('Is Live: ', isLive);
+		console.info('Is PostLive: ', isPostLiveDvr);
+		if (latencyClass) {
+			console.info('Latency Class: %o', latencyClass);
+		}
+		if (extraInfo && shortDescription) {
+			console.info('Short Description:');
+			console.info(shortDescription);
+			//console.dir(console.dir(videoDetails.shortDescription.replace('\n\' \+', '')));
+		}
+	}
     //
     /*if (metadata[videoId]['downloadFinished']){
         console.info('VIDEOID; ' + videoId + 'ALready DOWNLOADED');
@@ -790,11 +793,11 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
     videoMetadata = metadata[videoId].video;
     // Diferentiate live|postlive from non-live:
     if (isLive || (isPostLiveDvr && !live)){
-        aid = audioMetadata.length - 1;
+        if(!refreshMetadata){aid = audioMetadata.length - 1;}
         if (fixed){
-            vid = videoMetadata.length - 1;
+            if(!refreshMetadata){vid = videoMetadata.length - 1;}
         }else{
-            vid = Math.min(videoMetadata.length - 1, 3);
+            if(!refreshMetadata){vid = Math.min(videoMetadata.length - 1, 3);}
         }
         //ffmuxargs = ffmuxargs.replace('-f nut','-f mpegts');
         aurl = audioMetadata[aid].BaseURL;
@@ -870,8 +873,10 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
             return 1;
         }
         aid = acodec.length - 1; // Defaulting to highest audio quality by sort.order:
+        //aid=0
         //if(vcodec.length < vid + 1){ vid = vcodec.length - 1; }; // Pick highest available-
         //console.dir(metadata[videoId].video);
+        //vid=0
         vid = vcodec.length - 1;// Defaulting to highest video quality
         if (await vcodec.every(elem=>elem.signatureCipher)){
             //vcodec[0].signatureCipher
@@ -895,7 +900,7 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
             mpv.send({ command: [ 'playlist-play-index', next ] })
         }*/
     }
-    if (!fullscreen){
+    if (!fullscreen && !refreshMetadata){
         child_process.execFile('notify-send', ['Ytdash: ' + metadata[videoId].title,
                                            metadata[videoId].author, '-t', 3000]);
     }
@@ -926,9 +931,11 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
         if (urlPassthrough){
             // Non-live streams are opened directly by the player:
             ipcCommand = { "command": ["loadfile", `${svurl}`, 'append-play']};
+            //ipcCommand = { "command": ["loadfile", `ytdl://${url}`, 'append-play']};
             if (!onlyAudio ){
                 ipcCommand.command.push( "audio-file=" + `${saurl}`+
                                           ",force-media-title=" + mpvTitle);
+                //ipcCommand.command.push("force-media-title=" + mpvTitle);
             }else{
                 ipcCommand.command.splice(1,1, `${saurl}`);
                 ipcCommand.command.push("force-media-title=" + mpvTitle);
@@ -959,11 +966,15 @@ async function openURL(url,fd, mpv, sq, onlyMetadata){
             console.debug('URL Open Time: ' + timeUrlOpen);
         }
         // Refresh stream metadata after 6hrs URLs lifetime - 1hr:
-        if ( timeUrlOpen >= metadata[videoId].expiresInSeconds - 3600){
+        //if ( timeUrlOpen >= metadata[videoId].expiresInSeconds - 3600){
+        if ( timeUrlOpen >= 25){
             if(debug){console.debug('URLS Expired. Refreshing.' );}
-            console.debug('URLs Expired. Refreshing stream metadata...');
-            metadata[videoId] = 0;
-            return openURL(url,fd, mpv, sq + 1);
+            //console.debug('URLs Expired. Refreshing stream metadata...');
+            //metadata[videoId] = 0;
+            metadata = {};
+            //console.info('METADATAAAAA: ');
+            //console.info(metadata);
+            return openURL(url,fd, mpv, sq + 1, false, true);
         }
         if (next) {
             if(debug){console.debug('NEXT ITEM REQUESTED!!!!' + next);}
@@ -1169,10 +1180,9 @@ async function apiSearch(query){
 }
 
 let results=[0];
-var metadata={};
+var metadata={},aid,vid;
 // MAIN ULTRA_ASYNC_GENERIC_LOOP_2000:
 async function  main() {
-	
     fs.mkdirSync(cacheDir, {recursive:true});
     fs.mkdirSync(configDir, {recursive:true});
     let mpvStdio = {stdio: ['ignore', process.stdout, process.stderr, 'ipc']},
