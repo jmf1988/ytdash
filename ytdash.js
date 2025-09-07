@@ -1010,9 +1010,9 @@ async function openURL(url,fd, mpv, sq, onlyMetadata, refreshMetadata){
             sq++;
             if(!onlyAudio){
                 bandEst = headers['x-bandwidth-est']/8/1024;
-                bandEst2 = headers['x-bandwidth-est2']/8/1024;
-                bandEst3 = headers['x-bandwidth-est3']/8/1024;
-                bandEstComp = headers['x-bandwidth-est-comp']/8/1024;
+                bandEst2 = headers['x-bandwidth-est2']/8/1024||bandEst;
+                bandEst3 = headers['x-bandwidth-est3']/8/1024||bandEst;
+                bandEstComp = headers['x-bandwidth-est-comp']/8/1024||0;
                 bandEstAvg = (bandEst + bandEst2 + bandEst3)/3;
                 bandEstAvgs.push(bandEstAvg);
                 if (bandEstAvgs.length > 5 ){bandEstAvgs.shift();}
