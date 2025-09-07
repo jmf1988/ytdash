@@ -283,7 +283,7 @@ async function request(url, type='GET', headers={}, ffmpeg, fd, playlistEntryId)
     if(debug){console.debug("REQUEST TYPE: " + type);}
     url = new URL(url);
     headers.Accept = '*/*';
-    headers['User-Agent'] = 'YTdash/0.19';
+    headers['User-Agent'] = 'YTdash/0.20';
     //headers['Connection'] = 'keep-alive';
     //headers['Range'] = 'bytes=0-1024000';
     //headers['Accept-Encoding'] = 'gzip';
